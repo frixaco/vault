@@ -7,11 +7,67 @@
   "main": "src/main.js",
   "scripts": {
     "dev": "electron .",
+    "dist-linux": "electron-builder --linux --x64 --publish never",
+    "dist-mac": "electron-builder --mac --arm64 --publish never",
+    "dist-mac-arm64": "electron-builder --mac --arm64 --publish never",
+    "dist-mac-universal": "electron-builder --mac --universal --publish never",
+    "dist-mac-x64": "electron-builder --mac --x64 --publish never",
+    "dist-win": "electron-builder --win --x64 --publish never",
+    "dist-win-arm64": "electron-builder --win --arm64 --publish never",
+    "dist-win-x64": "electron-builder --win --x64 --publish never",
     "fmt": "oxfmt --check .",
     "fmt-fix": "oxfmt --write .",
     "lint": "oxlint ."
   },
   "devDependencies": {
-    "electron": "41.3.0"
-  }
+    "electron": "41.3.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.frixa.vault",
+    "artifactName": "Vault-${version}-${arch}.${ext}",
+    "asar": true,
+    "compression": "maximum",
+    "electronLanguages": [
+      "en-US"
+    ],
+    "files": [
+      "src/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.ts",
+      "!**/*.tsx",
+      "!**/*.test.*",
+      "!**/*.spec.*",
+      "!**/__tests__/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "category": "Utility",
+      "executableName": "vault",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm",
+        "pacman"
+      ]
+    }
+  },
+  "productName": "Vault"
 }
