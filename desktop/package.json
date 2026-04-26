@@ -1,0 +1,17 @@
+{
+  "name": "@vault/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vault desktop app.",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "electron .",
+    "fmt": "oxfmt --check .",
+    "fmt-fix": "oxfmt --write .",
+    "lint": "oxlint ."
+  },
+  "devDependencies": {
+    "electron": "41.3.0"
+  }
+}

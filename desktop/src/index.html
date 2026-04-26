@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vault Electron</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel" aria-labelledby="app-title">
+        <p class="eyebrow">pnpm 11 workspace</p>
+        <h1 id="app-title">Vault Electron</h1>
+        <p class="lede">
+          A modern Electron starter with a secure preload bridge, current pnpm workspace settings,
+          oxlint, and oxfmt.
+        </p>
+        <p id="runtime" class="runtime"></p>
+      </section>
+    </main>
+    <script type="module" src="./renderer.js"></script>
+  </body>
+</html>

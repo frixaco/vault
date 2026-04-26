@@ -1,0 +1,24 @@
+{
+  "name": "@vault/sync-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vault sync API.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsgo -p tsconfig.json",
+    "fmt": "oxfmt --check .",
+    "fmt-fix": "oxfmt --write .",
+    "lint": "oxlint .",
+    "typecheck": "tsgo -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.0.0",
+    "hono": "4.12.15"
+  },
+  "devDependencies": {
+    "@types/node": "25.6.0",
+    "tsx": "4.21.0"
+  }
+}

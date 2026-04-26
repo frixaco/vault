@@ -1,0 +1,10 @@
+packages:
+  - "desktop"
+  - "mobile"
+  - "sync-api"
+
+allowBuilds:
+  electron: true
+  esbuild: true
+
+nodeLinker: hoisted
