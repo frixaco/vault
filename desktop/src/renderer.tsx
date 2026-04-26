@@ -1,4 +1,3 @@
-import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { StrictMode } from "react";
@@ -6,13 +5,9 @@ import { createRoot } from "react-dom/client";
 
 function App() {
   const editor = useEditor({
+    autofocus: true,
     content: "",
-    extensions: [
-      StarterKit,
-      Placeholder.configure({
-        placeholder: "Start writing...",
-      }),
-    ],
+    extensions: [StarterKit],
     editorProps: {
       attributes: {
         "aria-label": "Vault editor",
@@ -24,6 +19,7 @@ function App() {
 
   return (
     <main className="app-shell">
+      <div className="window-drag-region" aria-hidden="true" />
       <EditorContent editor={editor} />
     </main>
   );

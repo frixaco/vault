@@ -32,6 +32,17 @@ body {
   padding: 32px;
 }
 
+.window-drag-region {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 10;
+  height: 32px;
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
 .editor-surface {
   min-height: calc(100vh - 64px);
   width: min(100%, 820px);
@@ -45,14 +56,6 @@ body {
 
 .editor-surface p {
   margin: 0 0 1em;
-}
-
-.editor-surface p.is-editor-empty:first-child::before {
-  height: 0;
-  color: #9ca3af;
-  content: "Start writing...";
-  float: left;
-  pointer-events: none;
 }
 
 .ProseMirror {

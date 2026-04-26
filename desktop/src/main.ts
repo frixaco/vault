@@ -3,6 +3,19 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow } from "electron";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const titleBarOptions =
+  process.platform === "darwin"
+    ? {
+        titleBarStyle: "hidden" as const,
+      }
+    : {
+        titleBarStyle: "hidden" as const,
+        titleBarOverlay: {
+          color: "#fbfbf8",
+          symbolColor: "#1f2937",
+          height: 32,
+        },
+      };
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -11,6 +24,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 480,
     title: "Vault",
+    ...titleBarOptions,
     backgroundColor: "#fbfbf8",
     webPreferences: {
       contextIsolation: true,
