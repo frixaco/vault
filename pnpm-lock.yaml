@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@types/node':
+        specifier: 25.6.0
+        version: 25.6.0
       '@typescript/native-preview':
         specifier: beta
         version: 7.0.0-dev.20260425.1
@@ -17,6 +20,9 @@ importers:
       oxlint:
         specifier: 1.61.0
         version: 1.61.0
+      tsx:
+        specifier: 4.21.0
+        version: 4.21.0
 
   desktop:
     devDependencies:
