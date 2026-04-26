@@ -1,6 +1,4 @@
-# Vault Workspace
-
-Desktop, mobile, and sync API workspace using pnpm 11, oxlint, and oxfmt.
+# Vault - clean, modern, beautiful Obsidian killer
 
 ## Packages
 

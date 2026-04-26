@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Goal
+
+Clean, minimal, beautiful Obsidian killer. Best note-taking app.
+
 ## Project Shape
 
 - Root workspace uses `pnpm@11.0.0-rc.5`.
@@ -50,6 +54,9 @@ CSC_IDENTITY_AUTO_DISCOVERY=false pnpm dist-desktop-mac-arm64
 - Signed/notarized builds are for sharing or release.
 - Unsigned builds are only for local packaging checks.
 - Do not commit `desktop/dist/` release artifacts.
+- Future desktop release packaging should use a staged app directory, following the useful part of T3 Code's approach: build desktop/runtime artifacts first, copy only the build outputs and required resources into the stage, write a minimal package manifest there, install production-only runtime dependencies, then run `electron-builder` from that stage.
+- Do not package the workspace source tree, repo root `node_modules`, tests, sourcemaps, or dev-only files into desktop releases unless explicitly needed for a production feature.
+- A future CLI does not require a bundled always-on server/client architecture. Prefer shared core libraries used by both desktop and CLI; add local app IPC only for commands that need live UI state.
 
 ## Desktop Memory Metrics
 
