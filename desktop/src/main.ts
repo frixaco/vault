@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow } from "electron/main";
+import { app, BrowserWindow } from "electron";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -10,17 +10,16 @@ function createWindow() {
     height: 760,
     minWidth: 720,
     minHeight: 480,
-    title: "Vault Electron",
-    backgroundColor: "#101828",
+    title: "Vault",
+    backgroundColor: "#fbfbf8",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: path.join(__dirname, "preload.mjs"),
       sandbox: false,
     },
   });
 
-  window.loadFile(path.join(__dirname, "index.html"));
+  window.loadFile(path.join(__dirname, "../dist-renderer/index.html"));
 }
 
 app.whenReady().then(() => {

@@ -4,24 +4,34 @@
   "private": true,
   "description": "Vault desktop app.",
   "type": "module",
-  "main": "src/main.js",
+  "main": "dist-electron/main.mjs",
   "scripts": {
-    "dev": "electron .",
-    "dist-linux": "electron-builder --linux --x64 --publish never",
-    "dist-mac": "electron-builder --mac --arm64 --publish never",
-    "dist-mac-arm64": "electron-builder --mac --arm64 --publish never",
-    "dist-mac-universal": "electron-builder --mac --universal --publish never",
-    "dist-mac-x64": "electron-builder --mac --x64 --publish never",
-    "dist-win": "electron-builder --win --x64 --publish never",
-    "dist-win-arm64": "electron-builder --win --arm64 --publish never",
-    "dist-win-x64": "electron-builder --win --x64 --publish never",
+    "build": "tsdown && node scripts/copy-renderer-assets.mjs",
+    "dev": "pnpm build && electron .",
+    "dist-linux": "pnpm build && electron-builder --linux --x64 --publish never",
+    "dist-mac": "pnpm build && electron-builder --mac --arm64 --publish never",
+    "dist-mac-arm64": "pnpm build && electron-builder --mac --arm64 --publish never",
+    "dist-mac-universal": "pnpm build && electron-builder --mac --universal --publish never",
+    "dist-mac-x64": "pnpm build && electron-builder --mac --x64 --publish never",
+    "dist-win": "pnpm build && electron-builder --win --x64 --publish never",
+    "dist-win-arm64": "pnpm build && electron-builder --win --arm64 --publish never",
+    "dist-win-x64": "pnpm build && electron-builder --win --x64 --publish never",
     "fmt": "oxfmt --check .",
     "fmt-fix": "oxfmt --write .",
-    "lint": "oxlint ."
+    "lint": "oxlint --ignore-pattern 'dist-electron/**' --ignore-pattern 'dist-renderer/**' .",
+    "typecheck": "tsgo -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@tiptap/extension-placeholder": "3.22.4",
+    "@tiptap/react": "3.22.4",
+    "@tiptap/starter-kit": "3.22.4",
+    "@types/react": "~19.2.14",
+    "@types/react-dom": "^19.2.3",
     "electron": "41.3.0",
-    "electron-builder": "^26.8.1"
+    "electron-builder": "^26.8.1",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
+    "tsdown": "0.21.10"
   },
   "build": {
     "appId": "com.frixa.vault",
@@ -32,7 +42,8 @@
       "en-US"
     ],
     "files": [
-      "src/**/*",
+      "dist-electron/**/*",
+      "dist-renderer/**/*",
       "package.json",
       "!**/*.map",
       "!**/*.ts",

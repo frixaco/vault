@@ -18,7 +18,7 @@
     "dist-desktop-win-x64": "pnpm --filter @vault/desktop dist-win-x64",
     "fmt": "oxfmt --check .",
     "fmt-fix": "oxfmt --write .",
-    "lint": "oxlint .",
+    "lint": "oxlint --ignore-pattern 'desktop/dist-electron/**' --ignore-pattern 'desktop/dist-renderer/**' .",
     "measure-desktop-mac": "tsx scripts/desktop-release-memory.ts",
     "typecheck": "pnpm typecheck-scripts && pnpm -r --if-present typecheck",
     "typecheck-scripts": "tsgo -p scripts/tsconfig.json --noEmit"

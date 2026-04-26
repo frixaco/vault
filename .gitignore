@@ -1,5 +1,7 @@
 node_modules/
 dist/
+desktop/dist-electron/
+desktop/dist-renderer/
 out/
 coverage/
 .DS_Store

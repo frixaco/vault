@@ -1,5 +1,5 @@
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   font-family:
     Inter,
     ui-sans-serif,
@@ -8,8 +8,8 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  background: #101828;
-  color: #f8fafc;
+  background: #fbfbf8;
+  color: #1f2937;
 }
 
 * {
@@ -20,66 +20,47 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  background:
-    radial-gradient(circle at top left, rgb(20 184 166 / 28%), transparent 34rem),
-    linear-gradient(135deg, #101828 0%, #18233a 58%, #0f172a 100%);
+  background: #fbfbf8;
 }
 
-.shell {
-  display: grid;
+#root {
   min-height: 100vh;
-  padding: 48px;
-  place-items: center;
 }
 
-.panel {
-  width: min(100%, 720px);
-  padding: 48px;
-  border: 1px solid rgb(255 255 255 / 16%);
-  border-radius: 8px;
-  background: rgb(15 23 42 / 76%);
-  box-shadow: 0 24px 80px rgb(0 0 0 / 32%);
+.app-shell {
+  min-height: 100vh;
+  padding: 32px;
 }
 
-.eyebrow {
-  margin: 0 0 16px;
-  color: #5eead4;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
+.editor-surface {
+  min-height: calc(100vh - 64px);
+  width: min(100%, 820px);
+  margin: 0 auto;
+  padding: 24px 0;
+  color: #1f2937;
+  font-size: 17px;
+  line-height: 1.65;
+  outline: none;
 }
 
-h1 {
-  margin: 0;
-  font-size: clamp(2.5rem, 7vw, 5rem);
-  line-height: 0.95;
+.editor-surface p {
+  margin: 0 0 1em;
 }
 
-.lede {
-  max-width: 58ch;
-  margin: 24px 0 0;
-  color: #cbd5e1;
-  font-size: 1.1rem;
-  line-height: 1.7;
+.editor-surface p.is-editor-empty:first-child::before {
+  height: 0;
+  color: #9ca3af;
+  content: "Start writing...";
+  float: left;
+  pointer-events: none;
 }
 
-.runtime {
-  margin: 32px 0 0;
-  padding-top: 24px;
-  border-top: 1px solid rgb(255 255 255 / 14%);
-  color: #94a3b8;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-  font-size: 0.9rem;
-  overflow-wrap: anywhere;
+.ProseMirror {
+  min-height: inherit;
 }
 
 @media (max-width: 640px) {
-  .shell {
-    padding: 24px;
-  }
-
-  .panel {
-    padding: 28px;
+  .app-shell {
+    padding: 20px;
   }
 }
