@@ -421,6 +421,10 @@ input {
   background: var(--accent);
 }
 
+.tabbar[data-multiple-tabs="false"] .tab[aria-selected="true"]::after {
+  display: none;
+}
+
 .tab-close {
   display: inline-grid;
   flex: 0 0 auto;

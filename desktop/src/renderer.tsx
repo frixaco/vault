@@ -380,7 +380,7 @@ function App() {
         </section>
       </aside>
 
-      <nav className="tabbar" aria-label="Open notes">
+      <nav className="tabbar" aria-label="Open notes" data-multiple-tabs={tabState.tabs.length > 1}>
         {tabState.tabs.map((tab) => (
           <button
             key={tab.id}
