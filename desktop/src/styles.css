@@ -1,3 +1,25 @@
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@source "./**/*.{html,ts,tsx}";
+
+@theme {
+  --color-bg: var(--bg);
+  --color-bg-raised: var(--bg-raised);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-faint: var(--fg-faint);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-accent: var(--accent);
+  --color-active: var(--active);
+  --font-vault-chrome: var(--font-chrome);
+  --ease-vault: var(--ease);
+  --animate-palette-fade: palette-fade var(--dur-fast) var(--ease);
+}
+
 :root {
   color-scheme: light;
 
@@ -130,40 +152,6 @@ input {
   outline: none;
 }
 
-/* ── App shell ─────────────────────────────────────────────────────── */
-
-.app-shell {
-  position: relative;
-  height: 100%;
-  overflow: hidden;
-  background: var(--bg);
-}
-
-.window-drag-region {
-  position: fixed;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 5;
-  height: var(--titlebar-h);
-  app-region: drag;
-  -webkit-app-region: drag;
-}
-
-/* ── Editor pane (full width) ─────────────────────────────────────── */
-
-.editor-pane {
-  position: fixed;
-  top: var(--titlebar-h);
-  right: 0;
-  bottom: var(--tabbar-h);
-  left: 0;
-  min-width: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-
 .editor-surface {
   width: min(100%, var(--editor-w));
   min-height: 100%;
@@ -255,68 +243,6 @@ input {
   background: var(--selection);
 }
 
-/* ── Sidebar overlay (floating, hidden by default) ────────────────── */
-
-.sidebar {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 20;
-  display: flex;
-  width: var(--sidebar-w);
-  background: var(--bg-raised);
-  border-right: var(--hairline-w) solid var(--hairline-strong);
-  transform: translateX(-100%);
-  transition:
-    transform var(--dur-slow) var(--ease),
-    opacity var(--dur) var(--ease),
-    visibility 0s linear var(--dur-slow);
-  opacity: 0;
-  visibility: hidden;
-}
-
-.sidebar[data-open="true"] {
-  transform: translateX(0);
-  opacity: 1;
-  visibility: visible;
-  transition:
-    transform var(--dur-slow) var(--ease),
-    opacity var(--dur) var(--ease),
-    visibility 0s linear 0s;
-}
-
-.sidebar-actions {
-  width: var(--sidebar-actions-w);
-  overflow: hidden;
-}
-
-.sidebar-notes {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-  padding: var(--titlebar-h) 0 8px;
-}
-
-.sidebar-status {
-  margin: 0 12px 10px;
-  font-family: var(--font-chrome);
-  font-size: 11px;
-  letter-spacing: -0.005em;
-  color: var(--fg-faint);
-}
-
-.sidebar-error {
-  margin: 0 8px 8px;
-  padding: 8px 10px;
-  border: var(--hairline-w) solid var(--hairline-strong);
-  background: color-mix(in oklch, var(--accent) 8%, var(--bg));
-  font-family: var(--font-chrome);
-  font-size: 11px;
-  color: var(--accent);
-}
-
 .sidebar-tree {
   display: block;
   flex: 1;
@@ -343,182 +269,6 @@ input {
   --trees-selected-focused-border-color-override: var(--accent);
 }
 
-/* ── Tab bar (bottom, compact horizontal) ─────────────────────────── */
-
-.tabbar {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  z-index: 18;
-  display: flex;
-  align-items: center;
-  width: min(calc(100% - var(--editor-x) * 2), calc(var(--editor-w) - var(--editor-x) * 2));
-  height: var(--tabbar-h);
-  background: transparent;
-  pointer-events: none;
-  overflow-x: auto;
-  scrollbar-width: none;
-  transform: translateX(-50%);
-}
-
-.tabbar::-webkit-scrollbar {
-  display: none;
-}
-
-.tab {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1 1 0;
-  min-width: 0;
-  height: 100%;
-  padding: 0 16px;
-  background: transparent;
-  font-family: var(--font-chrome);
-  font-size: 12px;
-  letter-spacing: -0.005em;
-  color: var(--fg-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  pointer-events: auto;
-  transition: color var(--dur-fast) var(--ease);
-}
-
-.tab-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* hairline divider between tabs (skip first) */
-.tab + .tab::before {
-  content: "";
-  position: absolute;
-  top: 30%;
-  bottom: 30%;
-  left: 0;
-  width: var(--hairline-w);
-  background: var(--hairline);
-}
-
-.tab:hover {
-  color: var(--fg-muted);
-}
-
-.tab[aria-selected="true"] {
-  color: var(--fg);
-}
-
-/* active marker: 1px accent rule beneath the baseline */
-.tab[aria-selected="true"]::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--accent);
-}
-
-.tabbar[data-multiple-tabs="false"] .tab[aria-selected="true"]::after {
-  display: none;
-}
-
-.tab-close {
-  display: inline-grid;
-  flex: 0 0 auto;
-  place-items: center;
-  width: 0;
-  height: 12px;
-  margin-right: 0;
-  overflow: hidden;
-  color: inherit;
-  opacity: 0;
-  transition:
-    width var(--dur-fast) var(--ease),
-    margin-right var(--dur-fast) var(--ease),
-    opacity var(--dur-fast) var(--ease);
-}
-
-.tab:hover .tab-close {
-  width: 10px;
-  margin-right: 6px;
-  opacity: 1;
-}
-
-.tab-close .icon {
-  width: 10px;
-  height: 10px;
-}
-
-/* ── Command palette ─────────────────────────────────────────────── */
-
-.palette-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  align-items: start;
-  justify-items: center;
-  padding-top: 14vh;
-  background: oklch(22% 0.01 90 / 0.18);
-  animation: palette-fade var(--dur-fast) var(--ease);
-}
-
-.palette {
-  width: min(560px, 92vw);
-  background: var(--bg-raised);
-  border: var(--hairline-w) solid var(--hairline-strong);
-}
-
-.palette-input {
-  width: 100%;
-  height: 40px;
-  padding: 0 14px;
-  border-bottom: var(--hairline-w) solid var(--hairline);
-  font-family: var(--font-chrome);
-  font-size: 13px;
-  color: var(--fg);
-}
-
-.palette-input::placeholder {
-  color: var(--fg-faint);
-}
-
-.palette-list {
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 4px 0;
-}
-
-.palette-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: 28px;
-  padding: 0 14px;
-  font-family: var(--font-chrome);
-  font-size: 12px;
-  color: var(--fg-muted);
-  text-align: left;
-  transition:
-    background var(--dur-fast) var(--ease),
-    color var(--dur-fast) var(--ease);
-}
-
-.palette-item:hover,
-.palette-item[aria-selected="true"] {
-  background: var(--active);
-  color: var(--fg);
-}
-
-.palette-item .palette-hint {
-  color: var(--fg-faint);
-  font-size: 11px;
-}
-
 @keyframes palette-fade {
   from {
     opacity: 0;
@@ -526,100 +276,6 @@ input {
   to {
     opacity: 1;
   }
-}
-
-/* ── Settings ─────────────────────────────────────────────────────── */
-
-.settings-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: grid;
-  align-items: start;
-  justify-items: center;
-  padding-top: 12vh;
-  background: oklch(22% 0.01 90 / 0.18);
-  animation: palette-fade var(--dur-fast) var(--ease);
-}
-
-.settings-panel {
-  width: min(520px, 92vw);
-  background: var(--bg-raised);
-  border: var(--hairline-w) solid var(--hairline-strong);
-}
-
-.settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 44px;
-  padding: 0 14px;
-  border-bottom: var(--hairline-w) solid var(--hairline);
-}
-
-.settings-header h1 {
-  margin: 0;
-  font-family: var(--font-chrome);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--fg);
-}
-
-.settings-close {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  color: var(--fg-muted);
-}
-
-.settings-close:hover {
-  color: var(--fg);
-}
-
-.settings-list {
-  padding: 4px 0;
-}
-
-.settings-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  min-height: 34px;
-  padding: 0 14px;
-  font-family: var(--font-chrome);
-  font-size: 12px;
-  color: var(--fg-muted);
-  text-align: left;
-}
-
-.settings-item:hover:not(:disabled) {
-  background: var(--active);
-  color: var(--fg);
-}
-
-.settings-item:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.settings-result,
-.settings-error {
-  margin: 0;
-  padding: 10px 14px 12px;
-  border-top: var(--hairline-w) solid var(--hairline);
-  font-family: var(--font-chrome);
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.settings-result {
-  color: var(--fg-muted);
-}
-
-.settings-error {
-  color: var(--accent);
 }
 
 /* ── Icons ─────────────────────────────────────────────────────────── */

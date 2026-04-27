@@ -30,7 +30,14 @@ export default defineConfig([
   {
     clean: true,
     deps: {
-      alwaysBundle: [/^@pierre\/trees/, /^@tiptap\/markdown/, /^marked/, /^preact/],
+      alwaysBundle: [
+        /^@pierre\/trees/,
+        /^@tiptap\/markdown/,
+        "clsx",
+        /^marked/,
+        /^preact/,
+        "tailwind-merge",
+      ],
     },
     entry: ["src/renderer.tsx"],
     format: "esm",

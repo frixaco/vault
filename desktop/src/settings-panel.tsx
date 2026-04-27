@@ -42,27 +42,32 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="settings-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-50 grid items-start justify-items-center bg-fg/20 px-6 pt-20 animate-palette-fade"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={onClose}
+    >
       <section
-        className="settings-panel"
+        className="w-full max-w-130 border border-hairline-strong bg-bg-raised"
         aria-label="Settings"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="settings-header">
-          <h1>Settings</h1>
+        <header className="flex h-11 items-center justify-between border-b border-hairline px-3.5">
+          <h1 className="m-0 font-vault-chrome text-[13px] font-medium text-fg">Settings</h1>
           <button
             type="button"
-            className="settings-close"
+            className="grid h-6 w-6 place-items-center bg-transparent text-fg-muted hover:text-fg"
             aria-label="Close settings"
             onClick={onClose}
           >
             <IconClose />
           </button>
         </header>
-        <div className="settings-list">
+        <div className="py-1">
           <button
             type="button"
-            className="settings-item"
+            className="flex min-h-8.5 w-full items-center justify-between bg-transparent px-3.5 font-vault-chrome text-left text-[12px] text-fg-muted hover:bg-active hover:text-fg disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
             disabled={migrationRunning}
             onClick={handleMigrateAttachments}
           >
@@ -71,9 +76,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         {migrationResult ? (
-          <p className="settings-result">{formatMigrationResult(migrationResult)}</p>
+          <p className="m-0 border-t border-hairline px-3.5 pt-2.5 pb-3 font-vault-chrome text-[11px] leading-normal text-fg-muted">
+            {formatMigrationResult(migrationResult)}
+          </p>
         ) : null}
-        {migrationError ? <p className="settings-error">{migrationError}</p> : null}
+        {migrationError ? (
+          <p className="m-0 border-t border-hairline px-3.5 pt-2.5 pb-3 font-vault-chrome text-[11px] leading-normal text-accent">
+            {migrationError}
+          </p>
+        ) : null}
       </section>
     </div>
   );

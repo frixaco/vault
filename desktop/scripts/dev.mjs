@@ -10,7 +10,7 @@ const rendererDir = join(desktopDir, "dist-renderer");
 const electronDir = join(desktopDir, "dist-electron");
 const filesBinaryName = process.platform === "win32" ? "files.exe" : "files";
 const filesBinaryPath = join(desktopDir, "build", "files", "bin", filesBinaryName);
-const assets = ["index.html", "styles.css"];
+const assets = ["index.html"];
 
 if (!existsSync(filesBinaryPath)) {
   console.log("[dev] files binary not found, building rust crate once");
@@ -80,7 +80,7 @@ tsdown.on("exit", (code) => {
   }
 });
 
-// 2. Copy + watch static renderer assets (index.html, styles.css)
+// 2. Copy + watch static renderer assets (index.html)
 for (const name of assets) {
   copyAsset(name);
   watch(join(srcDir, name), { persistent: true }, () => copyAsset(name));
@@ -92,13 +92,47 @@ watch(rendererDir, { persistent: true }, () => {
   restoreAssetsTimer = setTimeout(restoreMissingAssets, 50);
 });
 
-// 3. Once tsdown produced its first outputs, launch electron
+// 3. Once tsdown produced its first renderer output, start Tailwind watch.
+let tailwindStarted = false;
+const startTailwind = () => {
+  if (tailwindStarted) return;
+  if (!existsSync(join(rendererDir, "renderer.js"))) return;
+
+  tailwindStarted = true;
+  const tailwind = spawn(
+    "pnpm",
+    [
+      "exec",
+      "tailwindcss",
+      "-i",
+      join(srcDir, "styles.css"),
+      "-o",
+      join(rendererDir, "styles.css"),
+      "--watch",
+    ],
+    {
+      cwd: desktopDir,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    },
+  );
+  children.push(tailwind);
+  tailwind.on("exit", (code) => {
+    if (code !== 0 && code !== null) {
+      console.error(`[dev] tailwind exited with ${code}`);
+      shutdown(code);
+    }
+  });
+};
+
+// 4. Once tsdown and tailwind produced their first outputs, launch electron
 let electronStarted = false;
 const startElectron = () => {
   if (electronStarted) return;
   if (!existsSync(join(electronDir, "main.mjs"))) return;
   if (!existsSync(join(electronDir, "preload.cjs"))) return;
   if (!existsSync(join(rendererDir, "renderer.js"))) return;
+  if (!existsSync(join(rendererDir, "styles.css"))) return;
   copyAssets();
   if (!existsSync(join(rendererDir, "index.html"))) return;
   electronStarted = true;
@@ -119,6 +153,7 @@ const startElectron = () => {
 };
 
 const poll = setInterval(() => {
+  startTailwind();
   startElectron();
   if (electronStarted) clearInterval(poll);
 }, 300);

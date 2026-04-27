@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { CommandPalette } from "./command-palette.js";
 import { setCurrentMarkdownNotePath, VaultImage, VaultMedia } from "./editor-media.js";
 import { IconClose } from "./icon-close.js";
+import { cn } from "./lib/utils.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { createInitialTabState, createNoteTab, createTempTab, ensureOpenTab } from "./tabs.js";
 import type { AttachmentsMigrationResult } from "./media-types.js";
@@ -359,33 +360,55 @@ function App() {
   }, [sidebarOpen, activeTab, openNewTempNote]);
 
   return (
-    <main className="app-shell">
-      <div className="window-drag-region" aria-hidden="true" />
+    <main className="relative h-full overflow-hidden bg-bg">
+      <div
+        className="fixed inset-x-0 top-0 z-10 h-8 [app-region:drag] [-webkit-app-region:drag]"
+        aria-hidden="true"
+      />
 
-      <section className="editor-pane" ref={editorPaneRef}>
+      <section
+        className="fixed inset-x-0 top-8 bottom-7 min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
+        ref={editorPaneRef}
+      >
         <EditorContent editor={editor} />
       </section>
 
       <aside
-        className="sidebar"
+        className="fixed inset-y-0 left-0 z-20 flex w-60 -translate-x-full border-r border-hairline-strong bg-bg-raised opacity-0 invisible transition-[transform,opacity] duration-200 ease-vault data-[open=true]:translate-x-0 data-[open=true]:opacity-100 data-[open=true]:visible"
         data-open={sidebarOpen}
         aria-label="Notes"
         aria-hidden={!sidebarOpen}
       >
-        <section className="sidebar-actions" aria-label="Workspace actions" />
-        <section className="sidebar-notes" aria-label="Note list">
-          <div className="sidebar-status">{status}</div>
-          {error ? <div className="sidebar-error">{error}</div> : null}
+        <section className="w-0 overflow-hidden" aria-label="Workspace actions" />
+        <section className="flex min-w-0 flex-1 flex-col pt-8 pb-2" aria-label="Note list">
+          <div className="mx-3 mt-0 mb-2.5 font-vault-chrome text-[11px] tracking-normal text-fg-faint">
+            {status}
+          </div>
+          {error ? (
+            <div className="mx-2 mt-0 mb-2 border border-hairline-strong bg-accent/10 px-2.5 py-2 font-vault-chrome text-[11px] text-accent">
+              {error}
+            </div>
+          ) : null}
           <FileTree className="sidebar-tree" model={noteTree} />
         </section>
       </aside>
 
-      <nav className="tabbar" aria-label="Open notes" data-multiple-tabs={tabState.tabs.length > 1}>
-        {tabState.tabs.map((tab) => (
+      <nav
+        className="fixed inset-x-12 bottom-0 z-10 mx-auto flex h-7 max-w-156 items-center overflow-x-auto bg-transparent pointer-events-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        aria-label="Open notes"
+      >
+        {tabState.tabs.map((tab, index) => (
           <button
             key={tab.id}
             type="button"
-            className="tab"
+            className={cn(
+              "group relative inline-flex h-full min-w-0 flex-1 basis-0 items-center justify-center overflow-hidden whitespace-nowrap bg-transparent px-4 font-vault-chrome text-[12px] tracking-normal text-fg-faint pointer-events-auto transition-colors duration-100 ease-vault hover:text-fg-muted aria-selected:text-fg",
+              index > 0 &&
+                "before:absolute before:top-2 before:bottom-2 before:left-0 before:w-px before:bg-hairline before:content-['']",
+              tabState.activeTabId === tab.id &&
+                tabState.tabs.length > 1 &&
+                "after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:bg-accent after:content-['']",
+            )}
             aria-selected={tabState.activeTabId === tab.id}
             onClick={() =>
               setTabState((current) => ({
@@ -397,7 +420,7 @@ function App() {
             onMouseDown={(event) => handleTabMouseDown(event, tab.id)}
           >
             <span
-              className="tab-close"
+              className="inline-grid h-4 w-0 flex-none place-items-center overflow-hidden text-current opacity-0 transition-all duration-100 ease-vault group-hover:mr-0.5 group-hover:ml-1.5 group-hover:w-5 group-hover:opacity-100 [&_.icon]:h-3 [&_.icon]:w-3"
               role="button"
               tabIndex={-1}
               aria-label={`Close ${tab.label}`}
@@ -408,7 +431,7 @@ function App() {
             >
               <IconClose />
             </span>
-            <span className="tab-label">{tab.label}</span>
+            <span className="min-w-0 overflow-hidden text-ellipsis">{tab.label}</span>
           </button>
         ))}
       </nav>
