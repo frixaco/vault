@@ -8,6 +8,7 @@
     "dev-desktop": "pnpm --filter @vault/desktop dev",
     "dev-mobile": "pnpm --filter @vault/mobile dev",
     "dev-sync-api": "pnpm --filter @vault/sync-api dev",
+    "build-files": "node scripts/build-files.mjs",
     "dist-desktop-linux": "pnpm --filter @vault/desktop dist-linux",
     "dist-desktop-mac": "pnpm --filter @vault/desktop dist-mac",
     "dist-desktop-mac-arm64": "pnpm --filter @vault/desktop dist-mac-arm64",

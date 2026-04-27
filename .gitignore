@@ -2,8 +2,11 @@ node_modules/
 dist/
 desktop/dist-electron/
 desktop/dist-renderer/
+desktop/build/
 out/
 coverage/
 .DS_Store
 *.log
 .env
+example-notes
+target

@@ -6,20 +6,26 @@
   "type": "module",
   "main": "dist-electron/main.mjs",
   "scripts": {
-    "build": "tsdown && node scripts/copy-renderer-assets.mjs",
+    "build": "pnpm --workspace-root build-files && pnpm build-app",
+    "build-app": "tsdown && node scripts/copy-renderer-assets.mjs",
     "dev": "pnpm build && electron .",
-    "dist-linux": "pnpm build && electron-builder --linux --x64 --publish never",
-    "dist-mac": "pnpm build && electron-builder --mac --arm64 --publish never",
-    "dist-mac-arm64": "pnpm build && electron-builder --mac --arm64 --publish never",
-    "dist-mac-universal": "pnpm build && electron-builder --mac --universal --publish never",
-    "dist-mac-x64": "pnpm build && electron-builder --mac --x64 --publish never",
-    "dist-win": "pnpm build && electron-builder --win --x64 --publish never",
-    "dist-win-arm64": "pnpm build && electron-builder --win --arm64 --publish never",
-    "dist-win-x64": "pnpm build && electron-builder --win --x64 --publish never",
+    "dist-linux": "pnpm --workspace-root build-files -- --target linux-x64 && pnpm build-app && electron-builder --linux --x64 --publish never",
+    "dist-mac": "pnpm --workspace-root build-files -- --target mac-arm64 && pnpm build-app && electron-builder --mac --arm64 --publish never",
+    "dist-mac-arm64": "pnpm --workspace-root build-files -- --target mac-arm64 && pnpm build-app && electron-builder --mac --arm64 --publish never",
+    "dist-mac-universal": "pnpm --workspace-root build-files -- --target mac-universal && pnpm build-app && electron-builder --mac --universal --publish never",
+    "dist-mac-x64": "pnpm --workspace-root build-files -- --target mac-x64 && pnpm build-app && electron-builder --mac --x64 --publish never",
+    "dist-win": "pnpm --workspace-root build-files -- --target win-x64 && pnpm build-app && electron-builder --win --x64 --publish never",
+    "dist-win-arm64": "pnpm --workspace-root build-files -- --target win-arm64 && pnpm build-app && electron-builder --win --arm64 --publish never",
+    "dist-win-x64": "pnpm --workspace-root build-files -- --target win-x64 && pnpm build-app && electron-builder --win --x64 --publish never",
     "fmt": "oxfmt --check .",
     "fmt-fix": "oxfmt --write .",
     "lint": "oxlint --ignore-pattern 'dist-electron/**' --ignore-pattern 'dist-renderer/**' .",
     "typecheck": "tsgo -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ff-labs/fff-node": "^0.6.4",
+    "@pierre/trees": "1.0.0-beta.3",
+    "koffi": "2.16.1"
   },
   "devDependencies": {
     "@tiptap/extension-placeholder": "3.22.4",
@@ -51,6 +57,16 @@
       "!**/*.test.*",
       "!**/*.spec.*",
       "!**/__tests__/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build/files/bin",
+        "to": "bin",
+        "filter": [
+          "files",
+          "files.exe"
+        ]
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",

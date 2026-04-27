@@ -230,7 +230,7 @@ GPU, network service, crashpad, and Electron framework costs remain.
 - backlink graph construction;
 - tag and task extraction;
 - search indexing;
-- fuzzy search;
+- fuzzy search (fff-search);
 - SQLite/FST index maintenance;
 - encryption, compression, and sync delta logic;
 - import/export pipelines.

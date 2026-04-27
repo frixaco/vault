@@ -15,7 +15,23 @@ export default defineConfig([
     target: "node22",
   },
   {
+    clean: false,
+    deps: {
+      neverBundle: ["electron"],
+    },
+    entry: ["src/preload.ts"],
+    format: "cjs",
+    minify: false,
+    outDir: "dist-electron",
+    platform: "node",
+    sourcemap: false,
+    target: "node22",
+  },
+  {
     clean: true,
+    deps: {
+      alwaysBundle: [/^@pierre\/trees/, /^preact/],
+    },
     entry: ["src/renderer.tsx"],
     format: "esm",
     minify: true,

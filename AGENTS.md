@@ -4,6 +4,14 @@
 
 Clean, minimal, beautiful Obsidian killer. Best note-taking app.
 
+## Instruction Priority
+
+- Follow the user's instructions strictly and literally.
+- If the user gives an exact set of actions, do only those actions.
+- Do not add extra safety checks, formatting, tests, commits, or other workflow steps unless the user asks for them or they are strictly required to complete the exact requested action.
+- When the user says "don't do anything else", treat that as a hard boundary.
+- If an instruction is ambiguous, ask one concise clarifying question instead of guessing and doing extra work.
+
 ## Project Shape
 
 - Root workspace uses `pnpm@11.0.0-rc.5`.
