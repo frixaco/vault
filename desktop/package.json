@@ -8,7 +8,7 @@
   "scripts": {
     "build": "pnpm --workspace-root build-files && pnpm build-app",
     "build-app": "tsdown && node scripts/copy-renderer-assets.mjs",
-    "dev": "pnpm build && electron .",
+    "dev": "node scripts/dev.mjs",
     "dist-linux": "pnpm --workspace-root build-files -- --target linux-x64 && pnpm build-app && electron-builder --linux --x64 --publish never",
     "dist-mac": "pnpm --workspace-root build-files -- --target mac-arm64 && pnpm build-app && electron-builder --mac --arm64 --publish never",
     "dist-mac-arm64": "pnpm --workspace-root build-files -- --target mac-arm64 && pnpm build-app && electron-builder --mac --arm64 --publish never",
@@ -25,6 +25,7 @@
   "dependencies": {
     "@ff-labs/fff-node": "^0.6.4",
     "@pierre/trees": "1.0.0-beta.3",
+    "@tiptap/markdown": "3.22.4",
     "koffi": "2.16.1"
   },
   "devDependencies": {

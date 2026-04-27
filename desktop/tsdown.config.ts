@@ -30,7 +30,7 @@ export default defineConfig([
   {
     clean: true,
     deps: {
-      alwaysBundle: [/^@pierre\/trees/, /^preact/],
+      alwaysBundle: [/^@pierre\/trees/, /^@tiptap\/markdown/, /^marked/, /^preact/],
     },
     entry: ["src/renderer.tsx"],
     format: "esm",
