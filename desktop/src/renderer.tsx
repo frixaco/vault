@@ -1,15 +1,23 @@
+import Link from "@tiptap/extension-link";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { CommandPalette } from "./command-palette.js";
+import { setCurrentMarkdownNotePath, VaultImage, VaultMedia } from "./editor-media.js";
+import { IconClose } from "./icon-close.js";
+import { SettingsPanel } from "./settings-panel.js";
+import { createInitialTabState, createNoteTab, createTempTab, ensureOpenTab } from "./tabs.js";
+import type { AttachmentsMigrationResult } from "./media-types.js";
 
 declare global {
   interface Window {
     vault: {
       closeWindow: () => Promise<void>;
       listNotes: () => Promise<string[]>;
+      migrateAttachments: () => Promise<AttachmentsMigrationResult>;
       openNote: (path: string) => Promise<string>;
       openTabMenu: (payload: {
         hasOthers: boolean;
@@ -19,118 +27,8 @@ declare global {
   }
 }
 
-function IconClose() {
-  return (
-    <svg className="icon" viewBox="0 0 12 12" aria-hidden="true">
-      <line x1="3" y1="3" x2="9" y2="9" />
-      <line x1="9" y1="3" x2="3" y2="9" />
-    </svg>
-  );
-}
-
-type EditorTab =
-  | {
-      content: string;
-      id: string;
-      kind: "temp";
-      label: string;
-    }
-  | {
-      content: string;
-      id: string;
-      kind: "note";
-      label: string;
-      path: string;
-    };
-
-interface TabState {
-  activeTabId: string;
-  tabs: EditorTab[];
-}
-
-let nextTempId = 0;
-
-function createTempTab(): EditorTab {
-  nextTempId += 1;
-  return {
-    content: "",
-    id: `temp:${Date.now()}:${nextTempId}`,
-    kind: "temp",
-    label: "untitled",
-  };
-}
-
-function createInitialTabState(): TabState {
-  const tab = createTempTab();
-  return {
-    activeTabId: tab.id,
-    tabs: [tab],
-  };
-}
-
-function createNoteTab(path: string, content: string): EditorTab {
-  return {
-    content,
-    id: `note:${path}`,
-    kind: "note",
-    label: path.split("/").at(-1) ?? path,
-    path,
-  };
-}
-
-function ensureOpenTab(state: TabState): TabState {
-  if (state.tabs.length > 0) return state;
-  return createInitialTabState();
-}
-
 function isBlankMarkdown(content: string) {
   return content.trim().length === 0;
-}
-
-function CommandPalette({ onClose, onNewNote }: { onClose: () => void; onNewNote: () => void }) {
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onClose]);
-
-  return (
-    <div className="palette-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="palette" onMouseDown={(event) => event.stopPropagation()}>
-        <input
-          className="palette-input"
-          placeholder="Jump to note, run command…"
-          autoFocus
-          aria-label="Command palette"
-        />
-        <div className="palette-list" role="listbox">
-          <button
-            className="palette-item"
-            role="option"
-            aria-selected="true"
-            type="button"
-            onClick={() => {
-              onNewNote();
-              onClose();
-            }}
-          >
-            <span>New note</span>
-            <span className="palette-hint">⌘N</span>
-          </button>
-          <button className="palette-item" role="option" type="button">
-            <span>Toggle sidebar</span>
-            <span className="palette-hint">⌘S</span>
-          </button>
-          <button className="palette-item" role="option" type="button">
-            <span>Search in notes</span>
-            <span className="palette-hint">⌘⇧F</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function App() {
@@ -139,9 +37,11 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [tabState, setTabState] = useState(createInitialTabState);
   const tabStateRef = useRef(tabState);
   const notesRef = useRef(new Set<string>());
+  const editorPaneRef = useRef<HTMLElement | null>(null);
   const applyingEditorContentRef = useRef(false);
   const openMarkdownNoteRef = useRef<(path: string) => void>(() => {});
   const activeTab = useMemo(
@@ -287,7 +187,7 @@ function App() {
 
   const { model: noteTree } = useFileTree({
     flattenEmptyDirectories: true,
-    initialExpansion: "open",
+    initialExpansion: "closed",
     icons: {
       set: "none",
     },
@@ -337,11 +237,33 @@ function App() {
       type: "doc",
       content: [{ type: "paragraph" }],
     },
-    extensions: [StarterKit, Markdown],
+    extensions: [
+      StarterKit.configure({
+        link: false,
+      }),
+      Link.configure({
+        enableClickSelection: false,
+        openOnClick: false,
+      }),
+      VaultImage,
+      VaultMedia,
+      Markdown,
+    ],
     editorProps: {
       attributes: {
         "aria-label": "Vault editor",
         class: "editor-surface",
+      },
+      handleClick: (_view, _pos, event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        const link = target?.closest<HTMLAnchorElement>("a[href]");
+
+        if (!link) return false;
+        if (!event.metaKey && !event.ctrlKey && !event.shiftKey) return false;
+
+        event.preventDefault();
+        window.open(link.getAttribute("href") ?? link.href, "_blank", "noopener,noreferrer");
+        return true;
       },
     },
     immediatelyRender: false,
@@ -361,6 +283,7 @@ function App() {
     if (!editor || !activeTab) return;
 
     applyingEditorContentRef.current = true;
+    setCurrentMarkdownNotePath(activeTab.kind === "note" ? activeTab.path : "");
     if (isBlankMarkdown(activeTab.content)) {
       editor.commands.setContent(
         {
@@ -377,7 +300,8 @@ function App() {
     }
     queueMicrotask(() => {
       applyingEditorContentRef.current = false;
-      editor.commands.focus("end");
+      editor.commands.focus("start");
+      editorPaneRef.current?.scrollTo({ left: 0, top: 0 });
     });
   }, [activeTab?.id, editor]);
 
@@ -413,6 +337,9 @@ function App() {
       } else if (mod && event.key.toLowerCase() === "p") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+      } else if (mod && event.key === ",") {
+        event.preventDefault();
+        setSettingsOpen((open) => !open);
       } else if (mod && event.key.toLowerCase() === "n") {
         event.preventDefault();
         openNewTempNote();
@@ -435,7 +362,7 @@ function App() {
     <main className="app-shell">
       <div className="window-drag-region" aria-hidden="true" />
 
-      <section className="editor-pane">
+      <section className="editor-pane" ref={editorPaneRef}>
         <EditorContent editor={editor} />
       </section>
 
@@ -487,8 +414,14 @@ function App() {
       </nav>
 
       {paletteOpen ? (
-        <CommandPalette onClose={() => setPaletteOpen(false)} onNewNote={openNewTempNote} />
+        <CommandPalette
+          onClose={() => setPaletteOpen(false)}
+          onNewNote={openNewTempNote}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       ) : null}
+
+      {settingsOpen ? <SettingsPanel onClose={() => setSettingsOpen(false)} /> : null}
     </main>
   );
 }

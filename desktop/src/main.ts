@@ -1,13 +1,17 @@
 import { spawn } from "node:child_process";
 import { watch } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, protocol } from "electron";
+import { serveMediaFile } from "./media-response.js";
+import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(__dirname, "..");
 const notesRoot = path.join(appRoot, "example-notes");
+const vaultDataRoot = path.join(notesRoot, ".vault");
+const vaultAssetsRoot = path.join(vaultDataRoot, "assets");
 const filesBinaryName = process.platform === "win32" ? "files.exe" : "files";
 const titleBarOptions =
   process.platform === "darwin"
@@ -22,6 +26,17 @@ const titleBarOptions =
           height: 32,
         },
       };
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "vault-media",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+    },
+  },
+]);
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -137,8 +152,89 @@ function resolveNoteFile(notePath: string) {
   return filePath;
 }
 
+function assertInsideDirectory(rootPath: string, filePath: string) {
+  const relativePath = path.relative(rootPath, filePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error("Path is outside the vault");
+  }
+}
+
+async function fileExists(filePath: string) {
+  try {
+    const fileStat = await stat(filePath);
+    return fileStat.isFile();
+  } catch {
+    return false;
+  }
+}
+
+function getNoteAssetDirectory(notePath: string) {
+  if (!notePath) {
+    throw new Error("Media needs a note path");
+  }
+
+  const noteFilePath = resolveNoteFile(notePath);
+  const noteAssetPath = path
+    .relative(notesRoot, noteFilePath)
+    .replace(/\.md$/i, "")
+    .split(path.sep)
+    .filter(Boolean);
+
+  return path.join(vaultAssetsRoot, ...noteAssetPath);
+}
+
+function normalizeMediaPath(mediaPath: string) {
+  return mediaPath
+    .replace(/^[/\\]+/, "")
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .join(path.sep);
+}
+
+async function resolveMediaFile(notePath: string, mediaPath: string) {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(mediaPath)) {
+    throw new Error("External media paths are not served by the vault");
+  }
+
+  const normalizedMediaPath = normalizeMediaPath(mediaPath);
+  if (!normalizedMediaPath) {
+    throw new Error("Media path is empty");
+  }
+
+  const baseDirectory = mediaPath.startsWith("/")
+    ? vaultAssetsRoot
+    : getNoteAssetDirectory(notePath);
+  const filePath = path.resolve(baseDirectory, normalizedMediaPath);
+  assertInsideDirectory(vaultAssetsRoot, filePath);
+  if (await fileExists(filePath)) return filePath;
+
+  throw new Error("Media file was not found");
+}
+
 async function openNote(_: Electron.IpcMainInvokeEvent, notePath: string) {
   return readFile(resolveNoteFile(notePath), "utf8");
+}
+
+async function openMedia(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const mediaPath = url.searchParams.get("path");
+
+    if (!mediaPath) {
+      return new Response("Missing media path", { status: 400 });
+    }
+
+    const filePath = await resolveMediaFile(url.searchParams.get("note") ?? "", mediaPath);
+    return serveMediaFile(request, filePath);
+  } catch (mediaError: unknown) {
+    const message = mediaError instanceof Error ? mediaError.message : String(mediaError);
+    return new Response(message, { status: 404 });
+  }
+}
+
+function migrateAttachments() {
+  return migrateAttachmentsToNoteAssets({ notesRoot });
 }
 
 function closeWindow(event: Electron.IpcMainInvokeEvent) {
@@ -188,6 +284,8 @@ function openTabMenu(
 }
 
 app.whenReady().then(() => {
+  protocol.handle("vault-media", openMedia);
+  ipcMain.handle("attachments:migrate", migrateAttachments);
   ipcMain.handle("notes:list", listExampleNotes);
   ipcMain.handle("notes:open", openNote);
   ipcMain.handle("tabs:menu", (event, payload: { hasOthers: boolean; hasRight: boolean }) =>

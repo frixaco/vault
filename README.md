@@ -1,5 +1,10 @@
 # Vault - clean, modern, beautiful Obsidian killer
 
+TODO:
+- [ ] Resize image like in Notion
+- [ ] Alignment rulers to move around images
+- [ ] Make attachment migration AST-aware so image syntax inside code blocks is not rewritten
+
 ## Packages
 
 - `desktop/` is the Electron desktop app.

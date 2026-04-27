@@ -20,6 +20,7 @@
     "fmt": "oxfmt --check .",
     "fmt-fix": "oxfmt --write .",
     "lint": "oxlint --ignore-pattern 'dist-electron/**' --ignore-pattern 'dist-renderer/**' .",
+    "migrate-attachments": "tsx src/media-migration.ts",
     "typecheck": "tsgo -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -29,6 +30,8 @@
     "koffi": "2.16.1"
   },
   "devDependencies": {
+    "@tiptap/extension-image": "3.22.4",
+    "@tiptap/extension-link": "3.22.4",
     "@tiptap/extension-placeholder": "3.22.4",
     "@tiptap/react": "3.22.4",
     "@tiptap/starter-kit": "3.22.4",
