@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { watch } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { mkdir, readFile, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, protocol } from "electron";
@@ -17,13 +17,14 @@ const titleBarOptions =
   process.platform === "darwin"
     ? {
         titleBarStyle: "hidden" as const,
+        trafficLightPosition: { x: 16, y: 15 },
       }
     : {
         titleBarStyle: "hidden" as const,
         titleBarOverlay: {
           color: "#fbfbf8",
           symbolColor: "#1f2937",
-          height: 32,
+          height: 40,
         },
       };
 
@@ -42,10 +43,14 @@ function createWindow() {
   const window = new BrowserWindow({
     width: 1100,
     height: 760,
-    minWidth: 720,
-    minHeight: 480,
+    minWidth: 480,
+    minHeight: 540,
     title: "Vault",
-    ...titleBarOptions,
+    // ...titleBarOptions,
+
+    titleBarStyle: "hidden" as const,
+    trafficLightPosition: { x: 16, y: 15 },
+
     backgroundColor: "#fbfbf8",
     webPreferences: {
       contextIsolation: true,
@@ -169,6 +174,15 @@ async function fileExists(filePath: string) {
   }
 }
 
+async function pathExists(filePath: string) {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getNoteAssetDirectory(notePath: string) {
   if (!notePath) {
     throw new Error("Media needs a note path");
@@ -214,6 +228,41 @@ async function resolveMediaFile(notePath: string, mediaPath: string) {
 
 async function openNote(_: Electron.IpcMainInvokeEvent, notePath: string) {
   return readFile(resolveNoteFile(notePath), "utf8");
+}
+
+function resolveNoteDirectory(notePath: string) {
+  const normalizedPath = notePath
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .join(path.sep);
+  const directoryPath = path.resolve(notesRoot, normalizedPath);
+  assertInsideDirectory(notesRoot, directoryPath);
+
+  if (directoryPath === notesRoot) {
+    throw new Error("The vault root cannot be moved");
+  }
+
+  return directoryPath;
+}
+
+function getMoveTargetPath(notePath: string, isFolder: boolean) {
+  return isFolder ? resolveNoteDirectory(notePath) : resolveNoteFile(notePath);
+}
+
+async function moveNote(
+  _: Electron.IpcMainInvokeEvent,
+  payload: { destinationPath: string; isFolder: boolean; sourcePath: string },
+) {
+  const sourcePath = getMoveTargetPath(payload.sourcePath, payload.isFolder);
+  const destinationPath = getMoveTargetPath(payload.destinationPath, payload.isFolder);
+
+  if (sourcePath === destinationPath) return;
+  if (await pathExists(destinationPath)) {
+    throw new Error(`Destination already exists: "${payload.destinationPath}"`);
+  }
+
+  await mkdir(path.dirname(destinationPath), { recursive: true });
+  await rename(sourcePath, destinationPath);
 }
 
 async function openMedia(request: Request) {
@@ -287,6 +336,11 @@ app.whenReady().then(() => {
   protocol.handle("vault-media", openMedia);
   ipcMain.handle("attachments:migrate", migrateAttachments);
   ipcMain.handle("notes:list", listExampleNotes);
+  ipcMain.handle(
+    "notes:move",
+    (event, payload: { destinationPath: string; isFolder: boolean; sourcePath: string }) =>
+      moveNote(event, payload),
+  );
   ipcMain.handle("notes:open", openNote);
   ipcMain.handle("tabs:menu", (event, payload: { hasOthers: boolean; hasRight: boolean }) =>
     openTabMenu(event, payload),

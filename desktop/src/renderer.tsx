@@ -19,6 +19,11 @@ declare global {
       closeWindow: () => Promise<void>;
       listNotes: () => Promise<string[]>;
       migrateAttachments: () => Promise<AttachmentsMigrationResult>;
+      moveNote: (payload: {
+        destinationPath: string;
+        isFolder: boolean;
+        sourcePath: string;
+      }) => Promise<void>;
       openNote: (path: string) => Promise<string>;
       openTabMenu: (payload: {
         hasOthers: boolean;
@@ -30,6 +35,44 @@ declare global {
 
 function isBlankMarkdown(content: string) {
   return content.trim().length === 0;
+}
+
+function stripTreeDirectory(path: string) {
+  return path.endsWith("/") ? path.slice(0, -1) : path;
+}
+
+function getPathBasename(path: string) {
+  return stripTreeDirectory(path).split("/").at(-1) ?? stripTreeDirectory(path);
+}
+
+function getMovedPath(sourcePath: string, directoryPath: string | null) {
+  const basename = getPathBasename(sourcePath);
+  return directoryPath ? `${stripTreeDirectory(directoryPath)}/${basename}` : basename;
+}
+
+function remapNotePath(
+  notePath: string,
+  sourcePath: string,
+  destinationPath: string,
+  isFolder: boolean,
+) {
+  if (!isFolder) return notePath === sourcePath ? destinationPath : notePath;
+
+  const sourcePrefix = `${sourcePath}/`;
+  if (notePath === sourcePath) return destinationPath;
+  if (!notePath.startsWith(sourcePrefix)) return notePath;
+  return `${destinationPath}/${notePath.slice(sourcePrefix.length)}`;
+}
+
+function remapNotePaths(
+  currentNotes: string[],
+  sourcePath: string,
+  destinationPath: string,
+  isFolder: boolean,
+) {
+  return currentNotes
+    .map((notePath) => remapNotePath(notePath, sourcePath, destinationPath, isFolder))
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function App() {
@@ -186,7 +229,82 @@ function App() {
     };
   }, [openMarkdownNote]);
 
+  const refreshNotes = useCallback(async () => {
+    const files = await window.vault.listNotes();
+    setNotes(files);
+    setStatus(`${files.length} notes`);
+  }, []);
+
+  const updateOpenNotePaths = useCallback(
+    (sourcePath: string, destinationPath: string, isFolder: boolean) => {
+      setTabState((current) => {
+        let nextActiveTabId = current.activeTabId;
+        const nextTabs = current.tabs.map((tab) => {
+          if (tab.kind !== "note") return tab;
+
+          const nextPath = remapNotePath(tab.path, sourcePath, destinationPath, isFolder);
+          if (nextPath === tab.path) return tab;
+
+          const nextTab = {
+            ...tab,
+            id: `note:${nextPath}`,
+            label: getPathBasename(nextPath),
+            path: nextPath,
+          };
+          if (tab.id === current.activeTabId) nextActiveTabId = nextTab.id;
+          return nextTab;
+        });
+
+        return {
+          activeTabId: nextActiveTabId,
+          tabs: nextTabs,
+        };
+      });
+    },
+    [],
+  );
+
+  const persistNoteMove = useCallback(
+    async (sourcePath: string, destinationPath: string, isFolder: boolean) => {
+      const normalizedSource = stripTreeDirectory(sourcePath);
+      const normalizedDestination = stripTreeDirectory(destinationPath);
+      if (normalizedSource === normalizedDestination) return;
+
+      setError(null);
+      setNotes((currentNotes) =>
+        remapNotePaths(currentNotes, normalizedSource, normalizedDestination, isFolder),
+      );
+      updateOpenNotePaths(normalizedSource, normalizedDestination, isFolder);
+
+      try {
+        await window.vault.moveNote({
+          destinationPath: normalizedDestination,
+          isFolder,
+          sourcePath: normalizedSource,
+        });
+        await refreshNotes();
+      } catch (moveError: unknown) {
+        setError(moveError instanceof Error ? moveError.message : String(moveError));
+        updateOpenNotePaths(normalizedDestination, normalizedSource, isFolder);
+        await refreshNotes();
+      }
+    },
+    [refreshNotes, updateOpenNotePaths],
+  );
+
   const { model: noteTree } = useFileTree({
+    dragAndDrop: {
+      onDropComplete: ({ draggedPaths, target }) => {
+        for (const draggedPath of draggedPaths) {
+          const isFolder = draggedPath.endsWith("/");
+          const destinationPath = getMovedPath(draggedPath, target.directoryPath);
+          void persistNoteMove(draggedPath, destinationPath, isFolder);
+        }
+      },
+      onDropError: (message) => {
+        setError(message);
+      },
+    },
     flattenEmptyDirectories: true,
     initialExpansion: "closed",
     icons: {
@@ -198,6 +316,14 @@ function App() {
       if (notePath) openMarkdownNoteRef.current(notePath);
     },
     paths: [],
+    renaming: {
+      onError: (message) => {
+        setError(message);
+      },
+      onRename: ({ destinationPath, isFolder, sourcePath }) => {
+        void persistNoteMove(sourcePath, destinationPath, isFolder);
+      },
+    },
     search: false,
     stickyFolders: true,
     unsafeCSS: `
@@ -308,12 +434,9 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    window.vault
-      .listNotes()
-      .then((files) => {
+    refreshNotes()
+      .then(() => {
         if (!active) return;
-        setNotes(files);
-        setStatus(`${files.length} notes`);
       })
       .catch((listError: unknown) => {
         if (!active) return;
@@ -323,7 +446,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshNotes]);
 
   useEffect(() => {
     noteTree.resetPaths(notes);
@@ -362,31 +485,33 @@ function App() {
   return (
     <main className="relative h-full overflow-hidden bg-bg">
       <div
-        className="fixed inset-x-0 top-0 z-10 h-8 [app-region:drag] [-webkit-app-region:drag]"
+        className="fixed inset-x-0 top-0 h-10 z-10 [app-region:drag] [-webkit-app-region:drag]"
         aria-hidden="true"
       />
 
       <section
-        className="fixed inset-x-0 top-8 bottom-7 min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
+        className="fixed inset-x-0 top-10 bottom-tabbar min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
         ref={editorPaneRef}
       >
         <EditorContent editor={editor} />
       </section>
 
       <aside
-        className="fixed inset-y-0 left-0 z-20 flex w-60 -translate-x-full border-r border-hairline-strong bg-bg-raised opacity-0 invisible transition-[transform,opacity] duration-200 ease-vault data-[open=true]:translate-x-0 data-[open=true]:opacity-100 data-[open=true]:visible"
+        className="sidebar-panel fixed inset-y-0 left-0 z-20 pt-4 flex w-sidebar border-r border-hairline-strong bg-bg-raised"
         data-open={sidebarOpen}
         aria-label="Notes"
         aria-hidden={!sidebarOpen}
       >
         <section className="w-0 overflow-hidden" aria-label="Workspace actions" />
-        <section className="flex min-w-0 flex-1 flex-col pt-8 pb-2" aria-label="Note list">
-          <div className="mx-3 mt-0 mb-2.5 font-vault-chrome text-[11px] tracking-normal text-fg-faint">
-            {status}
-          </div>
+        <section
+          className="sidebar-panel-content flex min-w-0 flex-1 flex-col pt-8 pb-2"
+          aria-label="Note list"
+        >
           {error ? (
-            <div className="mx-2 mt-0 mb-2 border border-hairline-strong bg-accent/10 px-2.5 py-2 font-vault-chrome text-[11px] text-accent">
-              {error}
+            <div className="px-2 pb-2">
+              <div className="border border-hairline-strong bg-accent/10 px-2.5 py-2 font-vault-chrome text-[11px] text-accent">
+                {error}
+              </div>
             </div>
           ) : null}
           <FileTree className="sidebar-tree" model={noteTree} />
@@ -394,7 +519,7 @@ function App() {
       </aside>
 
       <nav
-        className="fixed inset-x-12 bottom-0 z-10 mx-auto flex h-7 max-w-156 items-center overflow-x-auto bg-transparent pointer-events-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="editor-width fixed bottom-0 left-1/2 z-10 flex h-tabbar -translate-x-1/2 items-center justify-center overflow-x-auto bg-transparent pointer-events-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         aria-label="Open notes"
       >
         {tabState.tabs.map((tab, index) => (
@@ -402,9 +527,9 @@ function App() {
             key={tab.id}
             type="button"
             className={cn(
-              "group relative inline-flex h-full min-w-0 flex-1 basis-0 items-center justify-center overflow-hidden whitespace-nowrap bg-transparent px-4 font-vault-chrome text-[12px] tracking-normal text-fg-faint pointer-events-auto transition-colors duration-100 ease-vault hover:text-fg-muted aria-selected:text-fg",
+              "group relative flex h-full min-w-0 max-w-45 flex-none items-center overflow-hidden whitespace-nowrap bg-transparent font-vault-chrome text-[12px] tracking-normal text-fg-faint pointer-events-auto transition-colors duration-100 ease-vault hover:text-fg-muted aria-selected:text-fg",
               index > 0 &&
-                "before:absolute before:top-2 before:bottom-2 before:left-0 before:w-px before:bg-hairline before:content-['']",
+                "before:absolute before:top-3 before:bottom-3 before:left-0 before:w-px before:bg-hairline-strong before:content-['']",
               tabState.activeTabId === tab.id &&
                 tabState.tabs.length > 1 &&
                 "after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:bg-accent after:content-['']",
@@ -419,19 +544,30 @@ function App() {
             onContextMenu={(event) => handleTabContextMenu(event, tab.id)}
             onMouseDown={(event) => handleTabMouseDown(event, tab.id)}
           >
-            <span
-              className="inline-grid h-4 w-0 flex-none place-items-center overflow-hidden text-current opacity-0 transition-all duration-100 ease-vault group-hover:mr-0.5 group-hover:ml-1.5 group-hover:w-5 group-hover:opacity-100 [&_.icon]:h-3 [&_.icon]:w-3"
-              role="button"
-              tabIndex={-1}
-              aria-label={`Close ${tab.label}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                closeTab(tab.id);
-              }}
-            >
-              <IconClose />
+            <span className="flex min-w-0 flex-1 items-center justify-center gap-1 pl-2 pr-5">
+              {tab.kind === "temp" ? null : (
+                <span
+                  className="inline-grid size-4 flex-none place-items-center overflow-hidden text-current opacity-0 transition-opacity duration-100 ease-vault group-hover:opacity-100 [&_.icon]:h-3 [&_.icon]:w-3"
+                  role="button"
+                  tabIndex={-1}
+                  aria-label={`Close ${tab.label}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                >
+                  <IconClose />
+                </span>
+              )}
+              <span
+                className={cn(
+                  "overflow-hidden flex-1 text-ellipsis text-center",
+                  tabState.activeTabId === tab.id ? "font-semibold" : "",
+                )}
+              >
+                {tab.label}
+              </span>
             </span>
-            <span className="min-w-0 overflow-hidden text-ellipsis">{tab.label}</span>
           </button>
         ))}
       </nav>

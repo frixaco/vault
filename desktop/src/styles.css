@@ -1,3 +1,7 @@
+* {
+  min-width: 0px;
+}
+
 @layer theme, base, components, utilities;
 
 @import "tailwindcss/theme.css" layer(theme);
@@ -17,6 +21,8 @@
   --color-active: var(--active);
   --font-vault-chrome: var(--font-chrome);
   --ease-vault: var(--ease);
+  --spacing-sidebar: var(--sidebar-w);
+  --spacing-tabbar: var(--tabbar-h);
   --animate-palette-fade: palette-fade var(--dur-fast) var(--ease);
 }
 
@@ -48,6 +54,7 @@
 
   /* Motion */
   --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-sidebar: cubic-bezier(0.23, 1, 0.32, 1);
   --dur-fast: 80ms;
   --dur: 120ms;
   --dur-slow: 180ms;
@@ -57,7 +64,6 @@
   --sidebar-actions-w: 0px;
   --editor-w: 720px;
   --editor-x: 48px;
-  --titlebar-h: 32px;
   --tabbar-h: 28px;
 
   font-family: var(--font-chrome);
@@ -152,6 +158,10 @@ input {
   outline: none;
 }
 
+.editor-width {
+  width: min(100%, var(--editor-w));
+}
+
 .editor-surface {
   width: min(100%, var(--editor-w));
   min-height: 100%;
@@ -243,6 +253,37 @@ input {
   background: var(--selection);
 }
 
+.sidebar-panel {
+  pointer-events: none;
+  transform: translateX(-100%);
+  transition: transform 165ms var(--ease-sidebar);
+  will-change: transform;
+}
+
+.sidebar-panel[data-open="true"] {
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.sidebar-panel-content {
+  transform: translateX(-4px);
+  transition: transform 165ms var(--ease-sidebar);
+}
+
+.sidebar-panel[data-open="true"] .sidebar-panel-content {
+  transform: translateX(0);
+  transition-delay: 18ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-panel,
+  .sidebar-panel-content {
+    transform: none;
+    transition-duration: 60ms;
+    transition-delay: 0s;
+  }
+}
+
 .sidebar-tree {
   display: block;
   flex: 1;
@@ -260,7 +301,7 @@ input {
   --trees-focus-ring-color-override: var(--accent);
   --trees-indent-guide-bg-override: var(--hairline);
   --trees-input-bg-override: var(--bg);
-  --trees-padding-inline-override: 0px;
+  --trees-padding-inline-override: 10px;
   --trees-scrollbar-thumb-override: var(--hairline-strong);
   --trees-search-bg-override: var(--bg);
   --trees-search-fg-override: var(--fg);
