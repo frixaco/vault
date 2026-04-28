@@ -2,8 +2,9 @@ import { watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu, protocol, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, protocol } from "electron";
 import { FffNoteSearch } from "./fff-search.js";
+import { ExternalLinkPopupService } from "./link-popup-service.js";
 import { NoteFileService } from "./note-file-service.js";
 import { VaultMediaResolver } from "./media-resolver.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
@@ -21,6 +22,7 @@ const noteFiles = new NoteFileService({
   notesRoot,
 });
 const noteSearch = new FffNoteSearch(notesRoot, vaultDataRoot);
+const linkPopupService = new ExternalLinkPopupService();
 const mediaResolver = new VaultMediaResolver({
   notesRoot,
   resolveNoteFile: (notePath) => noteFiles.resolveNoteFile(notePath),
@@ -234,52 +236,8 @@ function wireNoteFileEvents() {
   });
 }
 
-function parsePopupUrl(rawUrl: string) {
-  const url = new URL(rawUrl);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Only HTTP and HTTPS links can be opened in popup windows");
-  }
-  return url;
-}
-
 async function openLinkPopup(event: Electron.IpcMainInvokeEvent, rawUrl: string) {
-  const url = parsePopupUrl(rawUrl);
-  const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-  const popup = new BrowserWindow({
-    width: 550,
-    height: 360,
-    minWidth: 320,
-    minHeight: 220,
-    parent,
-    title: url.hostname,
-    backgroundColor: "#111111",
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  let wasClosed = false;
-
-  popup.on("closed", () => {
-    wasClosed = true;
-  });
-
-  popup.webContents.setWindowOpenHandler(({ url }) => {
-    try {
-      void shell.openExternal(parsePopupUrl(url).toString());
-    } catch {
-      // Ignore non-web popup requests from external pages.
-    }
-    return { action: "deny" };
-  });
-
-  try {
-    await popup.loadURL(url.toString());
-  } catch (error) {
-    if (wasClosed || popup.isDestroyed()) return;
-    throw error;
-  }
+  return linkPopupService.open(event, rawUrl);
 }
 
 type TabMenuAction = "close" | "close-others" | "close-right" | null;
