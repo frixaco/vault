@@ -29,7 +29,10 @@ export type VaultApi = {
   searchNoteContent: (payload: { query: string }) => Promise<NoteContentSearchResponse>;
   searchNoteTitles: (payload: { query: string }) => Promise<NoteTitleSearchResponse>;
   searchNotes: (payload: { query: string; scope: SearchScope }) => Promise<NoteSearchResponse>;
-  saveNote: (payload: { content: string; path: string }) => Promise<void>;
+  saveNote: (payload: {
+    content: string;
+    path: string;
+  }) => Promise<{ content: string; path: string }>;
   setOpenNotePaths: (payload: { paths: string[] }) => Promise<void>;
   trackNoteSearchSelection: (payload: { notePath: string; query: string }) => Promise<void>;
 };

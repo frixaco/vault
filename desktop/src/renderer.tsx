@@ -11,11 +11,18 @@ import { vaultApi } from "./renderer-api.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { TabBar } from "./tab-bar.js";
 import { createDraftTab, createInitialTabState, createNoteTab, ensureOpenTab } from "./tabs.js";
+import type { EditorTab } from "./tabs.js";
 import type { NotesTreePatchEvent } from "./note-events.js";
 import type { NoteSearchResult, SearchJump } from "./search-types.js";
 
 function isBlankMarkdown(content: string) {
-  return content.trim().length === 0;
+  return (
+    content
+      .split(/\r?\n/)
+      .filter((line) => !/^#{1,6}\s*$/.test(line.trim()))
+      .join("\n")
+      .trim().length === 0
+  );
 }
 
 function getTitleFromMarkdown(content: string) {
@@ -104,7 +111,6 @@ function App() {
     [tabState.tabs],
   );
   const openNotePathsKey = openNotePaths.join("\n");
-  const activeNoteTitle = activeTab?.kind === "note" ? getPathBasename(activeTab.path) : "";
 
   useEffect(() => {
     tabStateRef.current = tabState;
@@ -350,6 +356,11 @@ function App() {
       if (applyingEditorContentRef.current) return;
 
       const activeTabId = tabStateRef.current.activeTabId;
+      const activeTab = tabStateRef.current.tabs.find((tab) => tab.id === activeTabId);
+      if (activeTab?.kind === "note" || activeTab?.kind === "draft") {
+        if (ensureFirstBlockIsH1(editor)) return;
+      }
+
       const content = editor.getMarkdown();
       setTabState((current) => ({
         ...current,
@@ -441,8 +452,31 @@ function App() {
 
         void vaultApi
           .saveNote({ content: latestTab.content, path: latestTab.path })
-          .then(() => {
-            lastSavedContentRef.current.set(latestTab.path, latestTab.content);
+          .then((savedNote) => {
+            lastSavedContentRef.current.delete(latestTab.path);
+            lastSavedContentRef.current.set(savedNote.path, savedNote.content);
+            setNotes((currentNotes) => {
+              const nextNotes = remapNotePaths(currentNotes, latestTab.path, savedNote.path, false);
+              return nextNotes.includes(savedNote.path)
+                ? nextNotes
+                : [...nextNotes, savedNote.path].sort((left, right) => left.localeCompare(right));
+            });
+            setTabState((current) => {
+              const currentTab = current.tabs.find((candidate) => candidate.id === latestTab.id);
+              if (currentTab?.kind !== "note") return current;
+              if (currentTab.path === savedNote.path && currentTab.content === savedNote.content) {
+                return current;
+              }
+
+              const noteTab = createNoteTab(savedNote.path, savedNote.content);
+              return {
+                activeTabId:
+                  current.activeTabId === currentTab.id ? noteTab.id : current.activeTabId,
+                tabs: current.tabs.map((candidate) =>
+                  candidate.id === currentTab.id ? noteTab : candidate,
+                ),
+              };
+            });
           })
           .catch((saveError: unknown) => {
             setError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -466,13 +500,7 @@ function App() {
     applyingEditorContentRef.current = true;
     setCurrentMarkdownNotePath(activeTab.kind === "note" ? activeTab.path : "");
     if (isBlankMarkdown(activeTab.content)) {
-      editor.commands.setContent(
-        {
-          type: "doc",
-          content: [{ type: "paragraph" }],
-        },
-        { emitUpdate: false },
-      );
+      editor.commands.setContent(getEmptyEditorDocument(activeTab.kind), { emitUpdate: false });
     } else {
       editor.commands.setContent(activeTab.content, {
         contentType: "markdown",
@@ -607,7 +635,6 @@ function App() {
         className="fixed inset-x-0 top-10 bottom-tabbar min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
         ref={editorPaneRef}
       >
-        {activeNoteTitle ? <div className="editor-title">{activeNoteTitle}</div> : null}
         <EditorContent editor={editor} />
       </section>
 
@@ -740,4 +767,32 @@ function buildEditorTextIndex(editor: NonNullable<ReturnType<typeof useEditor>>)
   });
 
   return { positions, text };
+}
+
+function getEmptyEditorDocument(tabKind: EditorTab["kind"]) {
+  return {
+    type: "doc",
+    content: [
+      tabKind === "note" || tabKind === "draft"
+        ? {
+            type: "heading",
+            attrs: { level: 1 },
+          }
+        : { type: "paragraph" },
+    ],
+  };
+}
+
+function ensureFirstBlockIsH1(editor: NonNullable<ReturnType<typeof useEditor>>) {
+  const firstNode = editor.state.doc.firstChild;
+  if (firstNode?.type.name === "heading" && firstNode.attrs.level === 1) return false;
+
+  return editor.commands.command(({ state, tr, dispatch }) => {
+    const heading = state.schema.nodes.heading;
+    if (!heading || !firstNode || !heading.validContent(firstNode.content)) return false;
+
+    tr.setNodeMarkup(0, heading, { level: 1 });
+    dispatch?.(tr);
+    return true;
+  });
 }

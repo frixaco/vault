@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld("vault", {
     ipcRenderer.invoke("notes:move", payload) as Promise<void>,
   openNote: (path: string) => ipcRenderer.invoke("notes:open", path) as Promise<string>,
   saveNote: (payload: { content: string; path: string }) =>
-    ipcRenderer.invoke("notes:save", payload) as Promise<void>,
+    ipcRenderer.invoke("notes:save", payload) as ReturnType<VaultApi["saveNote"]>,
   setOpenNotePaths: (payload: { paths: string[] }) =>
     ipcRenderer.invoke("notes:set-open-paths", payload) as Promise<void>,
   openPopup: (url: string) => ipcRenderer.invoke("links:open-popup", url) as Promise<void>,

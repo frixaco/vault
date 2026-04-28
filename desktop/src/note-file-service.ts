@@ -107,7 +107,7 @@ export class NoteFileService {
   }
 
   async readNote(notePath: string) {
-    return stripMatchingTitleLine(notePath, await readFile(this.resolveNoteFile(notePath), "utf8"));
+    return ensureNoteTitleLine(notePath, await readFile(this.resolveNoteFile(notePath), "utf8"));
   }
 
   async createNote(content: string) {
@@ -115,10 +115,9 @@ export class NoteFileService {
       throw new Error("New note needs content before it can be saved");
     }
 
-    const { body, title } = getNotePartsFromContent(content);
+    const { content: normalizedContent, title } = normalizeNoteContent(content);
     const notePath = await this.getAvailableRootNotePath(title);
-    await this.writeNote(notePath, body);
-    return { content: body, path: notePath };
+    return this.writeNote(notePath, normalizedContent);
   }
 
   async writeNote(notePath: string, content: string) {
@@ -127,12 +126,27 @@ export class NoteFileService {
       throw new Error("Note path is empty");
     }
 
-    const filePath = this.resolveNoteFile(normalizedPath);
+    const normalizedNote = normalizeNoteContent(content, getRootNoteTitle(normalizedPath));
+    const targetPath = await this.getAvailableSiblingNotePath(normalizedPath, normalizedNote.title);
+    const sourceFilePath = this.resolveNoteFile(normalizedPath);
+    const filePath = this.resolveNoteFile(targetPath);
+
+    if (targetPath !== normalizedPath) {
+      try {
+        await mkdir(path.dirname(filePath), { recursive: true });
+        await rename(sourceFilePath, filePath);
+        this.applyMovedPath(normalizedPath, targetPath, false);
+      } catch (error) {
+        const sourceExists = await pathExists(sourceFilePath);
+        if (sourceExists) throw error;
+      }
+    }
+
     await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, stripMatchingTitleLine(normalizedPath, content), "utf8");
+    await writeFile(filePath, normalizedNote.content, "utf8");
 
     const meta = await this.readNoteMeta(filePath);
-    if (!meta) return;
+    if (!meta) return { content: normalizedNote.content, path: targetPath };
 
     const previous = this.notes.get(meta.path);
     this.notes.set(meta.path, meta);
@@ -142,6 +156,8 @@ export class NoteFileService {
       removed: [],
       updated: previous ? [meta] : [],
     });
+
+    return { content: normalizedNote.content, path: targetPath };
   }
 
   async moveNote(payload: { destinationPath: string; isFolder: boolean; sourcePath: string }) {
@@ -176,10 +192,17 @@ export class NoteFileService {
   }
 
   private async getAvailableRootNotePath(title: string) {
-    const basePath = sanitizeRootNoteTitle(title);
+    return this.getAvailableSiblingNotePath("", title);
+  }
+
+  private async getAvailableSiblingNotePath(currentNotePath: string, title: string) {
+    const directoryPath = currentNotePath.split("/").slice(0, -1).join("/");
+    const baseName = sanitizeRootNoteTitle(title);
+    const basePath = directoryPath ? `${directoryPath}/${baseName}` : baseName;
 
     for (let index = 0; ; index += 1) {
       const notePath = index === 0 ? basePath : `${basePath} ${index}`;
+      if (notePath === currentNotePath) return notePath;
       if (this.notes.has(notePath)) continue;
 
       try {
@@ -502,19 +525,35 @@ function createNoteMeta(notePath: string, mtimeMs: number, size: number): NoteMe
   };
 }
 
-function getNotePartsFromContent(content: string) {
-  const match = content.match(/^(.*?)(\r?\n|$)([\s\S]*)$/);
-  const firstLine = match?.[1]?.trim() ?? "";
-  const body = match?.[3] ?? "";
-  const title = getTitleFromLine(firstLine);
-  return { body, title };
+async function pathExists(filePath: string) {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function stripMatchingTitleLine(notePath: string, content: string) {
-  const { body, title } = getNotePartsFromContent(content);
-  if (!title) return content;
+function normalizeNoteContent(content: string, fallbackTitle = "Untitled") {
+  const match = content.match(/^(.*?)(\r?\n|$)([\s\S]*)$/);
+  const firstLine = match?.[1]?.trim() ?? "";
+  const rest = match?.[3] ?? "";
+  const title = getTitleFromLine(firstLine) || fallbackTitle;
+  const normalizedTitle = `# ${title}`;
+  const normalizedBody = rest.length > 0 ? `${normalizedTitle}\n${rest}` : `${normalizedTitle}\n`;
 
-  return sanitizeRootNoteTitle(title) === getRootNoteTitle(notePath) ? body : content;
+  return {
+    content: normalizedBody,
+    title,
+  };
+}
+
+function ensureNoteTitleLine(notePath: string, content: string) {
+  const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const title = getTitleFromLine(firstLine);
+  if (title) return normalizeNoteContent(content, getRootNoteTitle(notePath)).content;
+
+  return `# ${getRootNoteTitle(notePath)}\n${content.trim() ? `\n${content}` : ""}`;
 }
 
 function getTitleFromLine(line: string) {
