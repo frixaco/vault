@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { IpcRendererEvent } from "electron";
 import type { AttachmentsMigrationResult } from "./media-types.js";
+import type { NotesChangedEvent } from "./note-events.js";
 import type {
   NoteContentSearchResponse,
   NoteSearchResponse,
@@ -12,6 +14,20 @@ export type TabMenuAction = "close" | "close-others" | "close-right" | null;
 contextBridge.exposeInMainWorld("vault", {
   migrateAttachments: () =>
     ipcRenderer.invoke("attachments:migrate") as Promise<AttachmentsMigrationResult>,
+  onNotesChanged: (callback: (event: NotesChangedEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: NotesChangedEvent) => {
+      callback(payload);
+    };
+    ipcRenderer.on("notes:changed", listener);
+    return () => ipcRenderer.removeListener("notes:changed", listener);
+  },
+  onNotesWatchError: (callback: (message: string) => void) => {
+    const listener = (_event: IpcRendererEvent, message: string) => {
+      callback(message);
+    };
+    ipcRenderer.on("notes:watch-error", listener);
+    return () => ipcRenderer.removeListener("notes:watch-error", listener);
+  },
   listNotes: () => ipcRenderer.invoke("notes:list") as Promise<string[]>,
   moveNote: (payload: { destinationPath: string; isFolder: boolean; sourcePath: string }) =>
     ipcRenderer.invoke("notes:move", payload) as Promise<void>,

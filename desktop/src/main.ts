@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { watch } from "node:fs";
+import { watch, type FSWatcher } from "node:fs";
 import { mkdir, readFile, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +16,9 @@ const vaultDataRoot = path.join(notesRoot, ".vault");
 const vaultAssetsRoot = path.join(vaultDataRoot, "assets");
 const noteSearch = new FffNoteSearch(notesRoot, vaultDataRoot);
 const filesBinaryName = process.platform === "win32" ? "files.exe" : "files";
+let notesWatcher: FSWatcher | null = null;
+let notesWatchTimer: NodeJS.Timeout | null = null;
+let pendingChangedNotePaths = new Set<string>();
 const titleBarOptions =
   process.platform === "darwin"
     ? {
@@ -129,6 +132,67 @@ function listExampleNotes() {
       resolve(notes);
     });
   });
+}
+
+function startNotesWatcher() {
+  if (notesWatcher) return;
+
+  try {
+    notesWatcher = watch(notesRoot, { recursive: true }, (_eventType, filename) => {
+      scheduleNotesChanged(filename?.toString() ?? "");
+    });
+  } catch (error) {
+    console.error("Unable to watch notes", error);
+  }
+}
+
+function scheduleNotesChanged(filename: string) {
+  if (shouldIgnoreWatchPath(filename)) return;
+
+  const notePath = normalizeWatchNotePath(filename);
+  if (notePath) pendingChangedNotePaths.add(notePath);
+
+  if (notesWatchTimer) clearTimeout(notesWatchTimer);
+  notesWatchTimer = setTimeout(() => {
+    notesWatchTimer = null;
+    void broadcastNotesChanged();
+  }, 120);
+}
+
+async function broadcastNotesChanged() {
+  const changedNotePaths = [...pendingChangedNotePaths];
+  pendingChangedNotePaths = new Set();
+
+  try {
+    const notes = await listExampleNotes();
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send("notes:changed", { changedNotePaths, notes });
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send("notes:watch-error", message);
+      }
+    }
+  }
+}
+
+function shouldIgnoreWatchPath(filename: string) {
+  const normalized = filename.split(/[\\/]+/).filter(Boolean);
+  return normalized[0] === ".vault";
+}
+
+function normalizeWatchNotePath(filename: string) {
+  const normalized = filename
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .join("/");
+
+  if (!normalized.toLowerCase().endsWith(".md")) return null;
+  return normalized.replace(/\.md$/i, "");
 }
 
 function getFilesBinaryPath() {
@@ -425,6 +489,7 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("window:close", closeWindow);
   createWindow();
+  startNotesWatcher();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -440,5 +505,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  if (notesWatchTimer) clearTimeout(notesWatchTimer);
+  notesWatcher?.close();
   noteSearch.dispose();
 });

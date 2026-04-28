@@ -12,6 +12,7 @@ import { cn } from "./lib/utils.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { createInitialTabState, createNoteTab, createTempTab, ensureOpenTab } from "./tabs.js";
 import type { AttachmentsMigrationResult } from "./media-types.js";
+import type { NotesChangedEvent } from "./note-events.js";
 import type {
   NoteContentSearchResponse,
   NoteSearchResponse,
@@ -27,6 +28,8 @@ declare global {
       closeWindow: () => Promise<void>;
       listNotes: () => Promise<string[]>;
       migrateAttachments: () => Promise<AttachmentsMigrationResult>;
+      onNotesChanged: (callback: (event: NotesChangedEvent) => void) => () => void;
+      onNotesWatchError: (callback: (message: string) => void) => () => void;
       moveNote: (payload: {
         destinationPath: string;
         isFolder: boolean;
@@ -482,6 +485,71 @@ function App() {
   useEffect(() => {
     noteTree.resetPaths(notes);
   }, [noteTree, notes]);
+
+  useEffect(() => {
+    function applyOpenNoteContent(notePath: string, content: string) {
+      const activeNote = tabStateRef.current.tabs.find(
+        (tab) => tab.id === tabStateRef.current.activeTabId && tab.kind === "note",
+      );
+
+      setTabState((current) => ({
+        ...current,
+        tabs: current.tabs.map((tab) =>
+          tab.kind === "note" && tab.path === notePath ? { ...tab, content } : tab,
+        ),
+      }));
+
+      if (!editor || activeNote?.kind !== "note" || activeNote.path !== notePath) return;
+      if (activeNote.content === content) return;
+
+      applyingEditorContentRef.current = true;
+      setCurrentMarkdownNotePath(notePath);
+      if (isBlankMarkdown(content)) {
+        editor.commands.setContent(
+          {
+            type: "doc",
+            content: [{ type: "paragraph" }],
+          },
+          { emitUpdate: false },
+        );
+      } else {
+        editor.commands.setContent(content, {
+          contentType: "markdown",
+          emitUpdate: false,
+        });
+      }
+      queueMicrotask(() => {
+        applyingEditorContentRef.current = false;
+      });
+    }
+
+    const unsubscribeChanged = window.vault.onNotesChanged(({ changedNotePaths, notes }) => {
+      const currentNotePaths = new Set(notes);
+      const changedPaths = new Set(changedNotePaths);
+      setNotes(notes);
+      setStatus(`${notes.length} notes`);
+
+      if (changedPaths.size === 0) return;
+
+      for (const tab of tabStateRef.current.tabs) {
+        if (tab.kind !== "note") continue;
+        if (!changedPaths.has(tab.path) || !currentNotePaths.has(tab.path)) continue;
+
+        void window.vault
+          .openNote(tab.path)
+          .then((content) => applyOpenNoteContent(tab.path, content))
+          .catch((watchError: unknown) => {
+            setError(watchError instanceof Error ? watchError.message : String(watchError));
+          });
+      }
+    });
+    const unsubscribeError = window.vault.onNotesWatchError((message) => setError(message));
+
+    return () => {
+      unsubscribeChanged();
+      unsubscribeError();
+    };
+  }, [editor]);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
