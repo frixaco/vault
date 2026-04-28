@@ -31,6 +31,19 @@ function getTitleFromMarkdown(content: string) {
   return title;
 }
 
+function ensureTitleLineFromPath(notePath: string, content: string) {
+  const titleLine = `# ${getPathBasename(notePath)}`;
+  const match = content.match(/^(.*?)(\r?\n|$)([\s\S]*)$/);
+  const firstLine = match?.[1]?.trim() ?? "";
+  const body = match?.[3] ?? "";
+
+  if (getTitleFromMarkdown(firstLine)) {
+    return body.length > 0 ? `${titleLine}\n${body}` : `${titleLine}\n`;
+  }
+
+  return content.trim() ? `${titleLine}\n\n${content}` : `${titleLine}\n`;
+}
+
 function stripTreeDirectory(path: string) {
   return path.endsWith("/") ? path.slice(0, -1) : path;
 }
@@ -215,7 +228,7 @@ function App() {
 
     setError(null);
     try {
-      const content = await vaultApi.openNote(notePath);
+      const content = ensureTitleLineFromPath(notePath, await vaultApi.openNote(notePath));
       lastSavedContentRef.current.set(notePath, content);
       setTabState((current) => {
         const nextTab = createNoteTab(notePath, content);
@@ -542,21 +555,24 @@ function App() {
 
   useEffect(() => {
     function applyOpenNoteContent(notePath: string, content: string) {
+      const normalizedContent = ensureTitleLineFromPath(notePath, content);
       const activeNote = tabStateRef.current.tabs.find(
         (tab) => tab.id === tabStateRef.current.activeTabId && tab.kind === "note",
       );
 
       if (activeNote?.kind === "note" && activeNote.path === notePath) {
-        if (activeNote.content !== content) return;
-        lastSavedContentRef.current.set(notePath, content);
+        if (activeNote.content !== normalizedContent) return;
+        lastSavedContentRef.current.set(notePath, normalizedContent);
         return;
       }
 
-      lastSavedContentRef.current.set(notePath, content);
+      lastSavedContentRef.current.set(notePath, normalizedContent);
       setTabState((current) => ({
         ...current,
         tabs: current.tabs.map((tab) =>
-          tab.kind === "note" && tab.path === notePath ? { ...tab, content } : tab,
+          tab.kind === "note" && tab.path === notePath
+            ? { ...tab, content: normalizedContent }
+            : tab,
         ),
       }));
     }
