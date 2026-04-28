@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, protocol, shell } from "electron";
 import { FffNoteSearch } from "./fff-search.js";
 import { NoteFileService } from "./note-file-service.js";
-import { serveMediaFile } from "./media-response.js";
 import { VaultMediaResolver } from "./media-resolver.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
+import { createVaultMediaProtocolHandler, registerVaultMediaScheme } from "./media-protocol.js";
 import type { NoteTitleSearchResponse, SearchScope, TitleSearchResult } from "./search-types.js";
 import { getNoteDisplayParts, normalizeSearchText, parseSearchInput } from "./search-utils.js";
 
@@ -41,16 +41,7 @@ const titleBarOptions =
         },
       };
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "vault-media",
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-    },
-  },
-]);
+registerVaultMediaScheme();
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -212,26 +203,6 @@ function setOpenNotePaths(_: Electron.IpcMainInvokeEvent, payload: { paths: stri
   noteFiles.setOpenNotePaths(payload.paths);
 }
 
-async function openMedia(request: Request) {
-  try {
-    const url = new URL(request.url);
-    const mediaPath = url.searchParams.get("path");
-
-    if (!mediaPath) {
-      return new Response("Missing media path", { status: 400 });
-    }
-
-    const filePath = await mediaResolver.resolveMediaFile(
-      url.searchParams.get("note") ?? "",
-      mediaPath,
-    );
-    return serveMediaFile(request, filePath);
-  } catch (mediaError: unknown) {
-    const message = mediaError instanceof Error ? mediaError.message : String(mediaError);
-    return new Response(message, { status: 404 });
-  }
-}
-
 function migrateAttachments() {
   return migrateAttachmentsToNoteAssets({ notesRoot });
 }
@@ -354,7 +325,7 @@ function openTabMenu(
 }
 
 app.whenReady().then(async () => {
-  protocol.handle("vault-media", openMedia);
+  protocol.handle("vault-media", createVaultMediaProtocolHandler(mediaResolver));
   wireNoteFileEvents();
   await noteFiles.start().catch((error: unknown) => {
     console.error("Unable to watch notes", error);
