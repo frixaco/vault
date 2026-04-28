@@ -9,48 +9,11 @@ import { VaultEmbed, VaultLink } from "./editor-embed.js";
 import { setCurrentMarkdownNotePath, VaultImage, VaultMedia } from "./editor-media.js";
 import { IconClose } from "./icon-close.js";
 import { cn } from "./lib/utils.js";
+import { vaultApi } from "./renderer-api.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { createInitialTabState, createNoteTab, createTempTab, ensureOpenTab } from "./tabs.js";
-import type { AttachmentsMigrationResult } from "./media-types.js";
-import type { NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
-import type {
-  NoteContentSearchResponse,
-  NoteSearchResponse,
-  NoteSearchResult,
-  NoteTitleSearchResponse,
-  SearchJump,
-  SearchScope,
-} from "./search-types.js";
-
-declare global {
-  interface Window {
-    vault: {
-      closeWindow: () => Promise<void>;
-      listNotes: () => Promise<string[]>;
-      migrateAttachments: () => Promise<AttachmentsMigrationResult>;
-      onNoteDeleted: (callback: (notePath: string) => void) => () => void;
-      onNotesTreePatch: (callback: (event: NotesTreePatchEvent) => void) => () => void;
-      onNotesWatchError: (callback: (message: string) => void) => () => void;
-      onOpenNoteUpdated: (callback: (event: OpenNoteUpdatedEvent) => void) => () => void;
-      moveNote: (payload: {
-        destinationPath: string;
-        isFolder: boolean;
-        sourcePath: string;
-      }) => Promise<void>;
-      openNote: (path: string) => Promise<string>;
-      openPopup: (url: string) => Promise<void>;
-      openTabMenu: (payload: {
-        hasOthers: boolean;
-        hasRight: boolean;
-      }) => Promise<"close" | "close-others" | "close-right" | null>;
-      searchNoteContent: (payload: { query: string }) => Promise<NoteContentSearchResponse>;
-      searchNoteTitles: (payload: { query: string }) => Promise<NoteTitleSearchResponse>;
-      searchNotes: (payload: { query: string; scope: SearchScope }) => Promise<NoteSearchResponse>;
-      setOpenNotePaths: (payload: { paths: string[] }) => Promise<void>;
-      trackNoteSearchSelection: (payload: { notePath: string; query: string }) => Promise<void>;
-    };
-  }
-}
+import type { NotesTreePatchEvent } from "./note-events.js";
+import type { NoteSearchResult, SearchJump } from "./search-types.js";
 
 function isBlankMarkdown(content: string) {
   return content.trim().length === 0;
@@ -148,7 +111,7 @@ function App() {
   }, [notes]);
 
   useEffect(() => {
-    void window.vault.setOpenNotePaths({ paths: openNotePaths }).catch(() => {});
+    void vaultApi.setOpenNotePaths({ paths: openNotePaths }).catch(() => {});
   }, [openNotePathsKey]);
 
   function closeTab(id: string) {
@@ -201,7 +164,7 @@ function App() {
   async function handleTabContextMenu(event: React.MouseEvent, id: string) {
     event.preventDefault();
     const index = tabState.tabs.findIndex((tab) => tab.id === id);
-    const action = await window.vault.openTabMenu({
+    const action = await vaultApi.openTabMenu({
       hasOthers: tabState.tabs.length > 1,
       hasRight: index >= 0 && index < tabState.tabs.length - 1,
     });
@@ -242,7 +205,7 @@ function App() {
 
     setError(null);
     try {
-      const content = await window.vault.openNote(notePath);
+      const content = await vaultApi.openNote(notePath);
       setTabState((current) => {
         const currentTab = current.tabs.find((tab) => tab.id === current.activeTabId);
         const nextTab = createNoteTab(notePath, content);
@@ -281,7 +244,7 @@ function App() {
   }, [openMarkdownNote]);
 
   const refreshNotes = useCallback(async () => {
-    const files = await window.vault.listNotes();
+    const files = await vaultApi.listNotes();
     setNotes(files);
     setStatus(`${files.length} notes`);
   }, []);
@@ -328,7 +291,7 @@ function App() {
       updateOpenNotePaths(normalizedSource, normalizedDestination, isFolder);
 
       try {
-        await window.vault.moveNote({
+        await vaultApi.moveNote({
           destinationPath: normalizedDestination,
           isFolder,
           sourcePath: normalizedSource,
@@ -551,17 +514,17 @@ function App() {
       });
     }
 
-    const unsubscribeTreePatch = window.vault.onNotesTreePatch((patch) => {
+    const unsubscribeTreePatch = vaultApi.onNotesTreePatch((patch) => {
       setNotes((currentNotes) => {
         const nextNotes = applyNotesTreePatch(currentNotes, patch);
         setStatus(`${nextNotes.length} notes`);
         return nextNotes;
       });
     });
-    const unsubscribeOpenNoteUpdated = window.vault.onOpenNoteUpdated(({ content, path }) => {
+    const unsubscribeOpenNoteUpdated = vaultApi.onOpenNoteUpdated(({ content, path }) => {
       applyOpenNoteContent(path, content);
     });
-    const unsubscribeNoteDeleted = window.vault.onNoteDeleted((notePath) => {
+    const unsubscribeNoteDeleted = vaultApi.onNoteDeleted((notePath) => {
       setTabState((current) => {
         const nextTabs = current.tabs.filter((tab) => tab.kind !== "note" || tab.path !== notePath);
         if (nextTabs.length === current.tabs.length) return current;
@@ -574,7 +537,7 @@ function App() {
         });
       });
     });
-    const unsubscribeError = window.vault.onNotesWatchError((message) => setError(message));
+    const unsubscribeError = vaultApi.onNotesWatchError((message) => setError(message));
 
     return () => {
       unsubscribeTreePatch();
@@ -602,7 +565,7 @@ function App() {
       } else if (mod && event.key.toLowerCase() === "w") {
         event.preventDefault();
         if (activeTab?.kind === "temp") {
-          void window.vault.closeWindow();
+          void vaultApi.closeWindow();
         } else if (activeTab) {
           closeTab(activeTab.id);
         }
@@ -708,7 +671,7 @@ function App() {
         <CommandPalette
           onClose={() => setPaletteOpen(false)}
           onOpenNote={(result: NoteSearchResult, query) => {
-            void window.vault
+            void vaultApi
               .trackNoteSearchSelection({ notePath: result.notePath, query })
               .catch(() => {});
             void openMarkdownNote(
@@ -716,8 +679,8 @@ function App() {
               result.type === "content" ? result.jump : undefined,
             );
           }}
-          searchNoteContent={window.vault.searchNoteContent}
-          searchNoteTitles={window.vault.searchNoteTitles}
+          searchNoteContent={vaultApi.searchNoteContent}
+          searchNoteTitles={vaultApi.searchNoteTitles}
         />
       ) : null}
 

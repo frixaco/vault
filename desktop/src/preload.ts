@@ -1,19 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
-import type { AttachmentsMigrationResult } from "./media-types.js";
 import type { NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
-import type {
-  NoteContentSearchResponse,
-  NoteSearchResponse,
-  NoteTitleSearchResponse,
-  SearchScope,
-} from "./search-types.js";
-
-export type TabMenuAction = "close" | "close-others" | "close-right" | null;
+import type { SearchScope } from "./search-types.js";
+import type { TabMenuAction, VaultApi } from "./vault-api.js";
 
 contextBridge.exposeInMainWorld("vault", {
   migrateAttachments: () =>
-    ipcRenderer.invoke("attachments:migrate") as Promise<AttachmentsMigrationResult>,
+    ipcRenderer.invoke("attachments:migrate") as ReturnType<VaultApi["migrateAttachments"]>,
   onNotesTreePatch: (callback: (event: NotesTreePatchEvent) => void) => {
     const listener = (_event: IpcRendererEvent, payload: NotesTreePatchEvent) => {
       callback(payload);
@@ -52,12 +45,14 @@ contextBridge.exposeInMainWorld("vault", {
   openTabMenu: (payload: { hasOthers: boolean; hasRight: boolean }) =>
     ipcRenderer.invoke("tabs:menu", payload) as Promise<TabMenuAction>,
   searchNotes: (payload: { query: string; scope: SearchScope }) =>
-    ipcRenderer.invoke("notes:search", payload) as Promise<NoteSearchResponse>,
+    ipcRenderer.invoke("notes:search", payload) as ReturnType<VaultApi["searchNotes"]>,
   searchNoteTitles: (payload: { query: string }) =>
-    ipcRenderer.invoke("notes:search-titles", payload) as Promise<NoteTitleSearchResponse>,
+    ipcRenderer.invoke("notes:search-titles", payload) as ReturnType<VaultApi["searchNoteTitles"]>,
   searchNoteContent: (payload: { query: string }) =>
-    ipcRenderer.invoke("notes:search-content", payload) as Promise<NoteContentSearchResponse>,
+    ipcRenderer.invoke("notes:search-content", payload) as ReturnType<
+      VaultApi["searchNoteContent"]
+    >,
   trackNoteSearchSelection: (payload: { notePath: string; query: string }) =>
     ipcRenderer.invoke("notes:search-track", payload) as Promise<void>,
   closeWindow: () => ipcRenderer.invoke("window:close") as Promise<void>,
-});
+} satisfies VaultApi);

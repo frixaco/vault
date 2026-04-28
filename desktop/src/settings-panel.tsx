@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { IconClose } from "./icon-close.js";
 import type { AttachmentsMigrationResult } from "./media-types.js";
+import { vaultApi } from "./renderer-api.js";
 
 function formatMigrationResult(result: AttachmentsMigrationResult) {
   if (result.referencesFound === 0) {
@@ -30,7 +31,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setMigrationRunning(true);
     setMigrationError(null);
     try {
-      setMigrationResult(await window.vault.migrateAttachments());
+      setMigrationResult(await vaultApi.migrateAttachments());
     } catch (migrateError: unknown) {
       setMigrationResult(null);
       setMigrationError(

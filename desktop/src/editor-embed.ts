@@ -1,6 +1,7 @@
 import Link from "@tiptap/extension-link";
 import { mergeAttributes, Node as TiptapNode } from "@tiptap/react";
 import { getEmbedForUrl } from "./embed-providers.js";
+import { vaultApi } from "./renderer-api.js";
 
 function formatMarkdownLinkTarget(target: string) {
   return /[\s()<>]/.test(target) ? `<${target}>` : target;
@@ -16,7 +17,7 @@ function createPreviewImage(thumbnailUrl: string) {
 }
 
 function openPopupUrl(url: string) {
-  void window.vault.openPopup(url);
+  void vaultApi.openPopup(url);
 }
 
 export const VaultEmbed = TiptapNode.create({
