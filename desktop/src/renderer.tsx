@@ -1,4 +1,3 @@
-import { FileTree, useFileTree } from "@pierre/trees/react";
 import { Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -7,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { CommandPalette } from "./command-palette.js";
 import { VaultEmbed, VaultLink } from "./editor-embed.js";
 import { setCurrentMarkdownNotePath, VaultImage, VaultMedia } from "./editor-media.js";
+import { FileTreeFeature } from "./file-tree-feature.js";
 import { vaultApi } from "./renderer-api.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { TabBar } from "./tab-bar.js";
@@ -24,11 +24,6 @@ function stripTreeDirectory(path: string) {
 
 function getPathBasename(path: string) {
   return stripTreeDirectory(path).split("/").at(-1) ?? stripTreeDirectory(path);
-}
-
-function getMovedPath(sourcePath: string, directoryPath: string | null) {
-  const basename = getPathBasename(sourcePath);
-  return directoryPath ? `${stripTreeDirectory(directoryPath)}/${basename}` : basename;
 }
 
 type PendingSearchJump = {
@@ -305,72 +300,6 @@ function App() {
     [refreshNotes, updateOpenNotePaths],
   );
 
-  const { model: noteTree } = useFileTree({
-    dragAndDrop: {
-      onDropComplete: ({ draggedPaths, target }) => {
-        for (const draggedPath of draggedPaths) {
-          const isFolder = draggedPath.endsWith("/");
-          const destinationPath = getMovedPath(draggedPath, target.directoryPath);
-          void persistNoteMove(draggedPath, destinationPath, isFolder);
-        }
-      },
-      onDropError: (message) => {
-        setError(message);
-      },
-    },
-    flattenEmptyDirectories: true,
-    initialExpansion: "closed",
-    icons: {
-      set: "none",
-    },
-    itemHeight: 26,
-    onSelectionChange: (selectedPaths) => {
-      const notePath = selectedPaths[0];
-      if (notePath) openMarkdownNoteRef.current(notePath);
-    },
-    paths: [],
-    renaming: {
-      onError: (message) => {
-        setError(message);
-      },
-      onRename: ({ destinationPath, isFolder, sourcePath }) => {
-        void persistNoteMove(sourcePath, destinationPath, isFolder);
-      },
-    },
-    search: false,
-    stickyFolders: true,
-    unsafeCSS: `
-      button[data-type='item'] {
-        border-radius: 2px;
-        font-family: var(--font-chrome);
-        font-size: 12px;
-        height: 26px;
-        padding-inline: 6px;
-      }
-      button[data-type='item']:hover {
-        background: var(--hover);
-      }
-      button[data-item-type='file'] > [data-item-section='icon'] {
-        display: none;
-      }
-      [data-item-section='content'] {
-        white-space: nowrap;
-      }
-      [data-item-section='content'] [data-truncate-group-container='middle'],
-      [data-item-section='content'] [data-truncate-group-container='middle'] > div,
-      [data-item-section='content'] [data-truncate-container],
-      [data-item-section='content'] [data-truncate-grid],
-      [data-item-section='content'] [data-truncate-grid] > div,
-      [data-item-section='content'] [data-truncate-content='visible'] {
-        display: contents;
-      }
-      [data-item-section='content'] [data-truncate-marker-cell],
-      [data-item-section='content'] [data-truncate-content='overflow'] {
-        display: none;
-      }
-    `,
-  });
-
   const editor = useEditor({
     autofocus: true,
     content: {
@@ -471,10 +400,6 @@ function App() {
       active = false;
     };
   }, [refreshNotes]);
-
-  useEffect(() => {
-    noteTree.resetPaths(notes);
-  }, [noteTree, notes]);
 
   useEffect(() => {
     function applyOpenNoteContent(notePath: string, content: string) {
@@ -608,7 +533,14 @@ function App() {
               </div>
             </div>
           ) : null}
-          <FileTree className="sidebar-tree" model={noteTree} />
+          <FileTreeFeature
+            notes={notes}
+            onError={setError}
+            onMove={(sourcePath, destinationPath, isFolder) => {
+              void persistNoteMove(sourcePath, destinationPath, isFolder);
+            }}
+            onOpenNote={(notePath) => openMarkdownNoteRef.current(notePath)}
+          />
         </section>
       </aside>
 
