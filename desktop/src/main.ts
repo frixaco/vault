@@ -1,4 +1,3 @@
-import { watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +11,7 @@ import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
 import { createVaultMediaProtocolHandler, registerVaultMediaScheme } from "./media-protocol.js";
 import type { NoteTitleSearchResponse, SearchScope, TitleSearchResult } from "./search-types.js";
 import { getNoteDisplayParts, normalizeSearchText, parseSearchInput } from "./search-utils.js";
+import { createMainWindow } from "./window-manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(__dirname, "..");
@@ -29,65 +29,14 @@ const mediaResolver = new VaultMediaResolver({
   resolveNoteFile: (notePath) => noteFiles.resolveNoteFile(notePath),
   vaultAssetsRoot,
 });
-const titleBarOptions =
-  process.platform === "darwin"
-    ? {
-        titleBarStyle: "hidden" as const,
-        trafficLightPosition: { x: 16, y: 15 },
-      }
-    : {
-        titleBarStyle: "hidden" as const,
-        titleBarOverlay: {
-          color: "#fbfbf8",
-          symbolColor: "#1f2937",
-          height: 40,
-        },
-      };
-
 registerVaultMediaScheme();
 
 function createWindow() {
-  const window = new BrowserWindow({
-    width: 1100,
-    height: 760,
-    minWidth: 480,
-    minHeight: 540,
-    title: "Vault",
-    // ...titleBarOptions,
-
-    titleBarStyle: "hidden" as const,
-    trafficLightPosition: { x: 16, y: 15 },
-
-    backgroundColor: "#fbfbf8",
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: path.join(__dirname, "preload.cjs"),
-      sandbox: false,
-    },
-  });
-
-  window.loadFile(path.join(__dirname, "../dist-renderer/index.html"));
-
-  if (!app.isPackaged) {
-    enableDevReload(window);
-  }
-}
-
-function enableDevReload(window: BrowserWindow) {
-  const rendererDir = path.join(__dirname, "../dist-renderer");
-  let timer: NodeJS.Timeout | null = null;
-  const watcher = watch(rendererDir, { recursive: true }, () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      if (!window.isDestroyed()) {
-        window.webContents.reloadIgnoringCache();
-      }
-    }, 120);
-  });
-  window.on("closed", () => {
-    if (timer) clearTimeout(timer);
-    watcher.close();
+  return createMainWindow({
+    appIsPackaged: app.isPackaged,
+    devRendererDir: path.join(__dirname, "../dist-renderer"),
+    preloadPath: path.join(__dirname, "preload.cjs"),
+    rendererIndexPath: path.join(__dirname, "../dist-renderer/index.html"),
   });
 }
 
