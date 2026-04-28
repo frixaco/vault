@@ -5,6 +5,7 @@ import { CachedTitleSearchProvider } from "./cached-title-search.js";
 import { FffNoteSearch } from "./fff-search.js";
 import { ExternalLinkPopupService } from "./link-popup-service.js";
 import { openTabMenu } from "./native-menu-service.js";
+import { wireNoteFileEvents } from "./note-event-broadcaster.js";
 import { registerNoteIpcHandlers } from "./notes-ipc.js";
 import { NoteFileService } from "./note-file-service.js";
 import { VaultMediaResolver } from "./media-resolver.js";
@@ -48,36 +49,13 @@ function closeWindow(event: Electron.IpcMainInvokeEvent) {
   BrowserWindow.fromWebContents(event.sender)?.close();
 }
 
-function sendToAllWindows(channel: string, payload: unknown) {
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) {
-      window.webContents.send(channel, payload);
-    }
-  }
-}
-
-function wireNoteFileEvents() {
-  noteFiles.onTreePatch((patch) => {
-    sendToAllWindows("notes:tree-patch", patch);
-  });
-  noteFiles.onOpenNoteUpdated((event) => {
-    sendToAllWindows("notes:open-note-updated", event);
-  });
-  noteFiles.onNoteDeleted((notePath) => {
-    sendToAllWindows("notes:note-deleted", notePath);
-  });
-  noteFiles.onError((message) => {
-    sendToAllWindows("notes:watch-error", message);
-  });
-}
-
 async function openLinkPopup(event: Electron.IpcMainInvokeEvent, rawUrl: string) {
   return linkPopupService.open(event, rawUrl);
 }
 
 app.whenReady().then(async () => {
   protocol.handle("vault-media", createVaultMediaProtocolHandler(mediaResolver));
-  wireNoteFileEvents();
+  wireNoteFileEvents(noteFiles);
   await noteFiles.start().catch((error: unknown) => {
     console.error("Unable to watch notes", error);
   });
