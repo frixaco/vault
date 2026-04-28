@@ -11,6 +11,7 @@ export type TabMenuAction = "close" | "close-others" | "close-right" | null;
 
 export type VaultApi = {
   closeWindow: () => Promise<void>;
+  createNote: (payload: { content: string }) => Promise<{ content: string; path: string }>;
   listNotes: () => Promise<string[]>;
   migrateAttachments: () => Promise<AttachmentsMigrationResult>;
   moveNote: (payload: {
@@ -28,6 +29,7 @@ export type VaultApi = {
   searchNoteContent: (payload: { query: string }) => Promise<NoteContentSearchResponse>;
   searchNoteTitles: (payload: { query: string }) => Promise<NoteTitleSearchResponse>;
   searchNotes: (payload: { query: string; scope: SearchScope }) => Promise<NoteSearchResponse>;
+  saveNote: (payload: { content: string; path: string }) => Promise<void>;
   setOpenNotePaths: (payload: { paths: string[] }) => Promise<void>;
   trackNoteSearchSelection: (payload: { notePath: string; query: string }) => Promise<void>;
 };

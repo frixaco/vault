@@ -1,11 +1,11 @@
 # Vault - clean, modern, beautiful Obsidian killer
 
 TODO:
+
 - [ ] Editor media: resize image/video rectangles inline
 - [ ] Editor media: left/center/right magnetic alignment with clean gutter controls
 - [ ] Editor media: edit media URL/path from the gutter control rail
 - [ ] Editor media: reversible delete from note and media file
-- [ ] Autosave editor changes with 1s debounce
 - [ ] Preserve workspace state: tabs, active note, sidebar expansion, and per-note scroll position
 - [ ] Conflict protection for external disk/sync updates while a note has local edits
 - [ ] Add a narrow note mutation queue/coordinator for writes, moves, deletes, watcher echoes, and future sync updates

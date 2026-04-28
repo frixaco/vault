@@ -162,11 +162,25 @@ input {
   width: min(100%, var(--editor-w));
 }
 
+.editor-title {
+  width: min(100%, var(--editor-w));
+  margin: 0 auto;
+  padding: 56px var(--editor-x) 0;
+  overflow: hidden;
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .editor-surface {
   width: min(100%, var(--editor-w));
   min-height: 100%;
   margin: 0 auto;
-  padding: 64px var(--editor-x) 96px;
+  padding: 24px var(--editor-x) 96px;
   font-family: var(--font-body);
   font-size: 17px;
   line-height: 1.7;

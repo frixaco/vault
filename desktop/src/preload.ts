@@ -7,6 +7,8 @@ import type { TabMenuAction, VaultApi } from "./vault-api.js";
 contextBridge.exposeInMainWorld("vault", {
   migrateAttachments: () =>
     ipcRenderer.invoke("attachments:migrate") as ReturnType<VaultApi["migrateAttachments"]>,
+  createNote: (payload: { content: string }) =>
+    ipcRenderer.invoke("notes:create", payload) as ReturnType<VaultApi["createNote"]>,
   onNotesTreePatch: (callback: (event: NotesTreePatchEvent) => void) => {
     const listener = (_event: IpcRendererEvent, payload: NotesTreePatchEvent) => {
       callback(payload);
@@ -39,6 +41,8 @@ contextBridge.exposeInMainWorld("vault", {
   moveNote: (payload: { destinationPath: string; isFolder: boolean; sourcePath: string }) =>
     ipcRenderer.invoke("notes:move", payload) as Promise<void>,
   openNote: (path: string) => ipcRenderer.invoke("notes:open", path) as Promise<string>,
+  saveNote: (payload: { content: string; path: string }) =>
+    ipcRenderer.invoke("notes:save", payload) as Promise<void>,
   setOpenNotePaths: (payload: { paths: string[] }) =>
     ipcRenderer.invoke("notes:set-open-paths", payload) as Promise<void>,
   openPopup: (url: string) => ipcRenderer.invoke("links:open-popup", url) as Promise<void>,

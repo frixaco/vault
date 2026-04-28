@@ -41,20 +41,18 @@ export function TabBar({
           onMouseDown={(event) => onTabMouseDown(event, tab.id)}
         >
           <span className="flex min-w-0 flex-1 items-center justify-center gap-1 pl-2 pr-5">
-            {tab.kind === "temp" ? null : (
-              <span
-                className="inline-grid size-4 flex-none place-items-center overflow-hidden text-current opacity-0 transition-opacity duration-100 ease-vault group-hover:opacity-100 [&_.icon]:h-3 [&_.icon]:w-3"
-                role="button"
-                tabIndex={-1}
-                aria-label={`Close ${tab.label}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCloseTab(tab.id);
-                }}
-              >
-                <IconClose />
-              </span>
-            )}
+            <span
+              className="inline-grid size-4 flex-none place-items-center overflow-hidden text-current opacity-0 transition-opacity duration-100 ease-vault group-hover:opacity-100 [&_.icon]:h-3 [&_.icon]:w-3"
+              role="button"
+              tabIndex={-1}
+              aria-label={`Close ${tab.label}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onCloseTab(tab.id);
+              }}
+            >
+              <IconClose />
+            </span>
             <span
               className={cn(
                 "overflow-hidden flex-1 text-ellipsis text-center",

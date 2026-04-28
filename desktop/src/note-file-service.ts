@@ -1,4 +1,4 @@
-import { mkdir, opendir, readFile, realpath, rename, stat } from "node:fs/promises";
+import { mkdir, opendir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import watcher from "@parcel/watcher";
 import type { NoteMeta, NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
@@ -110,6 +110,35 @@ export class NoteFileService {
     return readFile(this.resolveNoteFile(notePath), "utf8");
   }
 
+  async createNote(content: string) {
+    const notePath = await this.getAvailableRootNotePath(getNoteTitleFromContent(content));
+    await this.writeNote(notePath, content);
+    return { content, path: notePath };
+  }
+
+  async writeNote(notePath: string, content: string) {
+    const normalizedPath = normalizeNotePath(notePath);
+    if (!normalizedPath) {
+      throw new Error("Note path is empty");
+    }
+
+    const filePath = this.resolveNoteFile(normalizedPath);
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, content, "utf8");
+
+    const meta = await this.readNoteMeta(filePath);
+    if (!meta) return;
+
+    const previous = this.notes.get(meta.path);
+    this.notes.set(meta.path, meta);
+
+    this.emitTreePatch({
+      added: previous ? [] : [meta],
+      removed: [],
+      updated: previous ? [meta] : [],
+    });
+  }
+
   async moveNote(payload: { destinationPath: string; isFolder: boolean; sourcePath: string }) {
     const sourcePath = normalizeNotePath(payload.sourcePath);
     const destinationPath = normalizeNotePath(payload.destinationPath);
@@ -139,6 +168,21 @@ export class NoteFileService {
     }
 
     return directoryPath;
+  }
+
+  private async getAvailableRootNotePath(title: string) {
+    const basePath = sanitizeRootNoteTitle(title);
+
+    for (let index = 0; ; index += 1) {
+      const notePath = index === 0 ? basePath : `${basePath} ${index}`;
+      if (this.notes.has(notePath)) continue;
+
+      try {
+        await stat(this.resolveNoteFile(notePath));
+      } catch {
+        return notePath;
+      }
+    }
   }
 
   private async startWatching() {
@@ -452,3 +496,29 @@ function createNoteMeta(notePath: string, mtimeMs: number, size: number): NoteMe
     title: fileName,
   };
 }
+
+function getNoteTitleFromContent(content: string) {
+  const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const title = firstLine.replace(/^#{1,6}\s+/, "").trim();
+  return title || "Untitled";
+}
+
+function sanitizeRootNoteTitle(title: string) {
+  const sanitized = Array.from(title.normalize("NFKC"))
+    .map((character) =>
+      character.charCodeAt(0) < 32 || invalidRootNoteTitleCharacters.has(character)
+        ? " "
+        : character,
+    )
+    .join("")
+    .replace(/\s+/g, " ")
+    .replace(/^\.+|\.+$/g, "")
+    .replace(/\.md$/i, "")
+    .trim()
+    .slice(0, 120)
+    .trim();
+
+  return sanitized || "Untitled";
+}
+
+const invalidRootNoteTitleCharacters = new Set(["<", ">", ":", '"', "/", "\\", "|", "?", "*"]);

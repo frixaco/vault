@@ -26,7 +26,7 @@ export function createTempTab(): EditorTab {
     content: "",
     id: `temp:${Date.now()}:${nextTempId}`,
     kind: "temp",
-    label: "",
+    label: "Untitled",
   };
 }
 

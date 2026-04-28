@@ -18,6 +18,12 @@ function isBlankMarkdown(content: string) {
   return content.trim().length === 0;
 }
 
+function getTitleFromMarkdown(content: string) {
+  const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const title = firstLine.replace(/^#{1,6}\s+/, "").trim();
+  return title || "Untitled";
+}
+
 function stripTreeDirectory(path: string) {
   return path.endsWith("/") ? path.slice(0, -1) : path;
 }
@@ -74,7 +80,7 @@ function applyNotesTreePatch(currentNotes: string[], patch: NotesTreePatchEvent)
 
 function App() {
   const [notes, setNotes] = useState<string[]>([]);
-  const [status, setStatus] = useState("Loading…");
+  const [, setStatus] = useState("Loading…");
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -85,6 +91,9 @@ function App() {
   const notesRef = useRef(new Set<string>());
   const editorPaneRef = useRef<HTMLElement | null>(null);
   const applyingEditorContentRef = useRef(false);
+  const autosaveTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const creatingTempTabsRef = useRef(new Set<string>());
+  const lastSavedContentRef = useRef(new Map<string, string>());
   const openMarkdownNoteRef = useRef<(path: string) => void>(() => {});
   const activeTab = useMemo(
     () => tabState.tabs.find((tab) => tab.id === tabState.activeTabId) ?? tabState.tabs[0] ?? null,
@@ -95,6 +104,10 @@ function App() {
     [tabState.tabs],
   );
   const openNotePathsKey = openNotePaths.join("\n");
+  const activeNoteTitle =
+    activeTab?.kind === "note"
+      ? getPathBasename(activeTab.path)
+      : getTitleFromMarkdown(activeTab?.content ?? "");
 
   useEffect(() => {
     tabStateRef.current = tabState;
@@ -175,6 +188,11 @@ function App() {
   }
 
   const openNewTempNote = useCallback(() => {
+    const activeTab = tabStateRef.current.tabs.find(
+      (tab) => tab.id === tabStateRef.current.activeTabId,
+    );
+    if (activeTab?.kind === "temp" && isBlankMarkdown(activeTab.content)) return;
+
     const tab = createTempTab();
     setTabState((current) => ({
       activeTabId: tab.id,
@@ -200,8 +218,8 @@ function App() {
     setError(null);
     try {
       const content = await vaultApi.openNote(notePath);
+      lastSavedContentRef.current.set(notePath, content);
       setTabState((current) => {
-        const currentTab = current.tabs.find((tab) => tab.id === current.activeTabId);
         const nextTab = createNoteTab(notePath, content);
 
         if (current.tabs.some((tab) => tab.kind === "note" && tab.path === notePath)) {
@@ -211,13 +229,6 @@ function App() {
           return {
             ...current,
             activeTabId: existingNoteTab?.id ?? current.activeTabId,
-          };
-        }
-
-        if (currentTab?.kind === "temp") {
-          return {
-            activeTabId: nextTab.id,
-            tabs: current.tabs.map((tab) => (tab.id === currentTab.id ? nextTab : tab)),
           };
         }
 
@@ -246,6 +257,12 @@ function App() {
   const updateOpenNotePaths = useCallback(
     (sourcePath: string, destinationPath: string, isFolder: boolean) => {
       setTabState((current) => {
+        const savedContent = lastSavedContentRef.current.get(sourcePath);
+        if (savedContent !== undefined) {
+          lastSavedContentRef.current.delete(sourcePath);
+          lastSavedContentRef.current.set(destinationPath, savedContent);
+        }
+
         let nextActiveTabId = current.activeTabId;
         const nextTabs = current.tabs.map((tab) => {
           if (tab.kind !== "note") return tab;
@@ -344,10 +361,106 @@ function App() {
       const content = editor.getMarkdown();
       setTabState((current) => ({
         ...current,
-        tabs: current.tabs.map((tab) => (tab.id === activeTabId ? { ...tab, content } : tab)),
+        tabs: current.tabs.map((tab) =>
+          tab.id === activeTabId
+            ? {
+                ...tab,
+                content,
+                label: tab.kind === "temp" ? getTitleFromMarkdown(content) : tab.label,
+              }
+            : tab,
+        ),
       }));
     },
   });
+
+  useEffect(() => {
+    const liveTabIds = new Set(tabState.tabs.map((tab) => tab.id));
+    for (const [tabId, timer] of autosaveTimersRef.current) {
+      if (!liveTabIds.has(tabId)) {
+        clearTimeout(timer);
+        autosaveTimersRef.current.delete(tabId);
+      }
+    }
+
+    for (const tab of tabState.tabs) {
+      const existingTimer = autosaveTimersRef.current.get(tab.id);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        autosaveTimersRef.current.delete(tab.id);
+      }
+
+      if (tab.kind === "temp") {
+        if (isBlankMarkdown(tab.content) || creatingTempTabsRef.current.has(tab.id)) continue;
+      } else if (lastSavedContentRef.current.get(tab.path) === tab.content) {
+        continue;
+      }
+
+      const timer = setTimeout(() => {
+        autosaveTimersRef.current.delete(tab.id);
+        const latestTab = tabStateRef.current.tabs.find((candidate) => candidate.id === tab.id);
+        if (!latestTab) return;
+
+        if (latestTab.kind === "temp") {
+          if (isBlankMarkdown(latestTab.content) || creatingTempTabsRef.current.has(latestTab.id)) {
+            return;
+          }
+
+          creatingTempTabsRef.current.add(latestTab.id);
+          void vaultApi
+            .createNote({ content: latestTab.content })
+            .then((createdNote) => {
+              lastSavedContentRef.current.set(createdNote.path, createdNote.content);
+              setNotes((currentNotes) =>
+                currentNotes.includes(createdNote.path)
+                  ? currentNotes
+                  : [...currentNotes, createdNote.path].sort((left, right) =>
+                      left.localeCompare(right),
+                    ),
+              );
+              setTabState((current) => {
+                const currentTab = current.tabs.find((candidate) => candidate.id === latestTab.id);
+                if (currentTab?.kind !== "temp") return current;
+
+                const noteTab = createNoteTab(createdNote.path, currentTab.content);
+                return {
+                  activeTabId:
+                    current.activeTabId === currentTab.id ? noteTab.id : current.activeTabId,
+                  tabs: current.tabs.map((candidate) =>
+                    candidate.id === currentTab.id ? noteTab : candidate,
+                  ),
+                };
+              });
+            })
+            .catch((saveError: unknown) => {
+              setError(saveError instanceof Error ? saveError.message : String(saveError));
+            })
+            .finally(() => {
+              creatingTempTabsRef.current.delete(latestTab.id);
+            });
+          return;
+        }
+
+        void vaultApi
+          .saveNote({ content: latestTab.content, path: latestTab.path })
+          .then(() => {
+            lastSavedContentRef.current.set(latestTab.path, latestTab.content);
+          })
+          .catch((saveError: unknown) => {
+            setError(saveError instanceof Error ? saveError.message : String(saveError));
+          });
+      }, 1000);
+
+      autosaveTimersRef.current.set(tab.id, timer);
+    }
+  }, [tabState.tabs]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of autosaveTimersRef.current.values()) clearTimeout(timer);
+      autosaveTimersRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (!editor || !activeTab) return;
@@ -407,35 +520,19 @@ function App() {
         (tab) => tab.id === tabStateRef.current.activeTabId && tab.kind === "note",
       );
 
+      if (activeNote?.kind === "note" && activeNote.path === notePath) {
+        if (activeNote.content !== content) return;
+        lastSavedContentRef.current.set(notePath, content);
+        return;
+      }
+
+      lastSavedContentRef.current.set(notePath, content);
       setTabState((current) => ({
         ...current,
         tabs: current.tabs.map((tab) =>
           tab.kind === "note" && tab.path === notePath ? { ...tab, content } : tab,
         ),
       }));
-
-      if (!editor || activeNote?.kind !== "note" || activeNote.path !== notePath) return;
-      if (activeNote.content === content) return;
-
-      applyingEditorContentRef.current = true;
-      setCurrentMarkdownNotePath(notePath);
-      if (isBlankMarkdown(content)) {
-        editor.commands.setContent(
-          {
-            type: "doc",
-            content: [{ type: "paragraph" }],
-          },
-          { emitUpdate: false },
-        );
-      } else {
-        editor.commands.setContent(content, {
-          contentType: "markdown",
-          emitUpdate: false,
-        });
-      }
-      queueMicrotask(() => {
-        applyingEditorContentRef.current = false;
-      });
     }
 
     const unsubscribeTreePatch = vaultApi.onNotesTreePatch((patch) => {
@@ -469,7 +566,7 @@ function App() {
       unsubscribeNoteDeleted();
       unsubscribeError();
     };
-  }, [editor]);
+  }, []);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -489,7 +586,7 @@ function App() {
       } else if (mod && event.key.toLowerCase() === "w") {
         event.preventDefault();
         if (activeTab?.kind === "temp") {
-          void vaultApi.closeWindow();
+          closeTab(activeTab.id);
         } else if (activeTab) {
           closeTab(activeTab.id);
         }
@@ -512,6 +609,7 @@ function App() {
         className="fixed inset-x-0 top-10 bottom-tabbar min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
         ref={editorPaneRef}
       >
+        <div className="editor-title">{activeNoteTitle}</div>
         <EditorContent editor={editor} />
       </section>
 

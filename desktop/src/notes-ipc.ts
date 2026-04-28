@@ -30,8 +30,14 @@ export function registerNoteIpcHandlers({
   titleSearch,
 }: NoteIpcHandlersOptions) {
   ipcMain.handle("notes:list", () => noteFiles.listNotePaths());
+  ipcMain.handle("notes:create", (_, payload: { content: string }) =>
+    noteFiles.createNote(payload.content),
+  );
   ipcMain.handle("notes:move", (_, payload) => moveNote(noteFiles, payload));
   ipcMain.handle("notes:open", (_, notePath: string) => noteFiles.readNote(notePath));
+  ipcMain.handle("notes:save", (_, payload: { content: string; path: string }) =>
+    noteFiles.writeNote(payload.path, payload.content),
+  );
   ipcMain.handle("notes:set-open-paths", (_, payload: { paths: string[] }) => {
     noteFiles.setOpenNotePaths(payload.paths);
   });
