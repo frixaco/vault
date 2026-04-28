@@ -7,10 +7,9 @@ import { createRoot } from "react-dom/client";
 import { CommandPalette } from "./command-palette.js";
 import { VaultEmbed, VaultLink } from "./editor-embed.js";
 import { setCurrentMarkdownNotePath, VaultImage, VaultMedia } from "./editor-media.js";
-import { IconClose } from "./icon-close.js";
-import { cn } from "./lib/utils.js";
 import { vaultApi } from "./renderer-api.js";
 import { SettingsPanel } from "./settings-panel.js";
+import { TabBar } from "./tab-bar.js";
 import { createInitialTabState, createNoteTab, createTempTab, ensureOpenTab } from "./tabs.js";
 import type { NotesTreePatchEvent } from "./note-events.js";
 import type { NoteSearchResult, SearchJump } from "./search-types.js";
@@ -613,59 +612,19 @@ function App() {
         </section>
       </aside>
 
-      <nav
-        className="editor-width fixed bottom-0 left-1/2 z-10 flex h-tabbar -translate-x-1/2 items-center justify-center overflow-x-auto bg-transparent pointer-events-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        aria-label="Open notes"
-      >
-        {tabState.tabs.map((tab, index) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={cn(
-              "group relative flex h-full min-w-0 max-w-45 flex-none items-center overflow-hidden whitespace-nowrap bg-transparent font-vault-chrome text-[12px] tracking-normal text-fg-faint pointer-events-auto transition-colors duration-100 ease-vault hover:text-fg-muted aria-selected:text-fg",
-              index > 0 &&
-                "before:absolute before:top-3 before:bottom-3 before:left-0 before:w-px before:bg-hairline-strong before:content-['']",
-              tabState.activeTabId === tab.id &&
-                tabState.tabs.length > 1 &&
-                "after:absolute after:right-0 after:bottom-0 after:left-0 after:h-0.5 after:bg-accent after:content-['']",
-            )}
-            aria-selected={tabState.activeTabId === tab.id}
-            onClick={() =>
-              setTabState((current) => ({
-                ...current,
-                activeTabId: tab.id,
-              }))
-            }
-            onContextMenu={(event) => handleTabContextMenu(event, tab.id)}
-            onMouseDown={(event) => handleTabMouseDown(event, tab.id)}
-          >
-            <span className="flex min-w-0 flex-1 items-center justify-center gap-1 pl-2 pr-5">
-              {tab.kind === "temp" ? null : (
-                <span
-                  className="inline-grid size-4 flex-none place-items-center overflow-hidden text-current opacity-0 transition-opacity duration-100 ease-vault group-hover:opacity-100 [&_.icon]:h-3 [&_.icon]:w-3"
-                  role="button"
-                  tabIndex={-1}
-                  aria-label={`Close ${tab.label}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    closeTab(tab.id);
-                  }}
-                >
-                  <IconClose />
-                </span>
-              )}
-              <span
-                className={cn(
-                  "overflow-hidden flex-1 text-ellipsis text-center",
-                  tabState.activeTabId === tab.id ? "font-semibold" : "",
-                )}
-              >
-                {tab.label}
-              </span>
-            </span>
-          </button>
-        ))}
-      </nav>
+      <TabBar
+        activeTabId={tabState.activeTabId}
+        onActivateTab={(id) =>
+          setTabState((current) => ({
+            ...current,
+            activeTabId: id,
+          }))
+        }
+        onCloseTab={closeTab}
+        onTabContextMenu={handleTabContextMenu}
+        onTabMouseDown={handleTabMouseDown}
+        tabs={tabState.tabs}
+      />
 
       {paletteOpen ? (
         <CommandPalette
