@@ -2,9 +2,10 @@ import { watch } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu, protocol } from "electron";
+import { app, BrowserWindow, ipcMain, protocol } from "electron";
 import { FffNoteSearch } from "./fff-search.js";
 import { ExternalLinkPopupService } from "./link-popup-service.js";
+import { openTabMenu } from "./native-menu-service.js";
 import { NoteFileService } from "./note-file-service.js";
 import { VaultMediaResolver } from "./media-resolver.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
@@ -238,48 +239,6 @@ function wireNoteFileEvents() {
 
 async function openLinkPopup(event: Electron.IpcMainInvokeEvent, rawUrl: string) {
   return linkPopupService.open(event, rawUrl);
-}
-
-type TabMenuAction = "close" | "close-others" | "close-right" | null;
-
-function openTabMenu(
-  event: Electron.IpcMainInvokeEvent,
-  payload: { hasOthers: boolean; hasRight: boolean },
-) {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  if (!window) {
-    return Promise.resolve<TabMenuAction>(null);
-  }
-
-  return new Promise<TabMenuAction>((resolve) => {
-    let chosen: TabMenuAction = null;
-    const menu = Menu.buildFromTemplate([
-      {
-        label: "Close",
-        click: () => {
-          chosen = "close";
-        },
-      },
-      {
-        label: "Close Others",
-        enabled: payload.hasOthers,
-        click: () => {
-          chosen = "close-others";
-        },
-      },
-      {
-        label: "Close All to the Right",
-        enabled: payload.hasRight,
-        click: () => {
-          chosen = "close-right";
-        },
-      },
-    ]);
-    menu.popup({
-      window,
-      callback: () => resolve(chosen),
-    });
-  });
 }
 
 app.whenReady().then(async () => {
