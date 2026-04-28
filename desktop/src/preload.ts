@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
 import type { AttachmentsMigrationResult } from "./media-types.js";
-import type { NotesChangedEvent } from "./note-events.js";
+import type { NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
 import type {
   NoteContentSearchResponse,
   NoteSearchResponse,
@@ -14,12 +14,26 @@ export type TabMenuAction = "close" | "close-others" | "close-right" | null;
 contextBridge.exposeInMainWorld("vault", {
   migrateAttachments: () =>
     ipcRenderer.invoke("attachments:migrate") as Promise<AttachmentsMigrationResult>,
-  onNotesChanged: (callback: (event: NotesChangedEvent) => void) => {
-    const listener = (_event: IpcRendererEvent, payload: NotesChangedEvent) => {
+  onNotesTreePatch: (callback: (event: NotesTreePatchEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: NotesTreePatchEvent) => {
       callback(payload);
     };
-    ipcRenderer.on("notes:changed", listener);
-    return () => ipcRenderer.removeListener("notes:changed", listener);
+    ipcRenderer.on("notes:tree-patch", listener);
+    return () => ipcRenderer.removeListener("notes:tree-patch", listener);
+  },
+  onOpenNoteUpdated: (callback: (event: OpenNoteUpdatedEvent) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: OpenNoteUpdatedEvent) => {
+      callback(payload);
+    };
+    ipcRenderer.on("notes:open-note-updated", listener);
+    return () => ipcRenderer.removeListener("notes:open-note-updated", listener);
+  },
+  onNoteDeleted: (callback: (notePath: string) => void) => {
+    const listener = (_event: IpcRendererEvent, notePath: string) => {
+      callback(notePath);
+    };
+    ipcRenderer.on("notes:note-deleted", listener);
+    return () => ipcRenderer.removeListener("notes:note-deleted", listener);
   },
   onNotesWatchError: (callback: (message: string) => void) => {
     const listener = (_event: IpcRendererEvent, message: string) => {
@@ -32,6 +46,8 @@ contextBridge.exposeInMainWorld("vault", {
   moveNote: (payload: { destinationPath: string; isFolder: boolean; sourcePath: string }) =>
     ipcRenderer.invoke("notes:move", payload) as Promise<void>,
   openNote: (path: string) => ipcRenderer.invoke("notes:open", path) as Promise<string>,
+  setOpenNotePaths: (payload: { paths: string[] }) =>
+    ipcRenderer.invoke("notes:set-open-paths", payload) as Promise<void>,
   openPopup: (url: string) => ipcRenderer.invoke("links:open-popup", url) as Promise<void>,
   openTabMenu: (payload: { hasOthers: boolean; hasRight: boolean }) =>
     ipcRenderer.invoke("tabs:menu", payload) as Promise<TabMenuAction>,

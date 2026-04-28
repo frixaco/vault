@@ -12,7 +12,7 @@ import { cn } from "./lib/utils.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { createInitialTabState, createNoteTab, createTempTab, ensureOpenTab } from "./tabs.js";
 import type { AttachmentsMigrationResult } from "./media-types.js";
-import type { NotesChangedEvent } from "./note-events.js";
+import type { NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
 import type {
   NoteContentSearchResponse,
   NoteSearchResponse,
@@ -28,8 +28,10 @@ declare global {
       closeWindow: () => Promise<void>;
       listNotes: () => Promise<string[]>;
       migrateAttachments: () => Promise<AttachmentsMigrationResult>;
-      onNotesChanged: (callback: (event: NotesChangedEvent) => void) => () => void;
+      onNoteDeleted: (callback: (notePath: string) => void) => () => void;
+      onNotesTreePatch: (callback: (event: NotesTreePatchEvent) => void) => () => void;
       onNotesWatchError: (callback: (message: string) => void) => () => void;
+      onOpenNoteUpdated: (callback: (event: OpenNoteUpdatedEvent) => void) => () => void;
       moveNote: (payload: {
         destinationPath: string;
         isFolder: boolean;
@@ -44,6 +46,7 @@ declare global {
       searchNoteContent: (payload: { query: string }) => Promise<NoteContentSearchResponse>;
       searchNoteTitles: (payload: { query: string }) => Promise<NoteTitleSearchResponse>;
       searchNotes: (payload: { query: string; scope: SearchScope }) => Promise<NoteSearchResponse>;
+      setOpenNotePaths: (payload: { paths: string[] }) => Promise<void>;
       trackNoteSearchSelection: (payload: { notePath: string; query: string }) => Promise<void>;
     };
   }
@@ -96,6 +99,22 @@ function remapNotePaths(
     .sort((left, right) => left.localeCompare(right));
 }
 
+function applyNotesTreePatch(currentNotes: string[], patch: NotesTreePatchEvent) {
+  const nextNotes = new Set(currentNotes);
+
+  for (const notePath of patch.removed) {
+    nextNotes.delete(notePath);
+  }
+  for (const note of patch.added) {
+    nextNotes.add(note.path);
+  }
+  for (const note of patch.updated) {
+    nextNotes.add(note.path);
+  }
+
+  return [...nextNotes].sort((left, right) => left.localeCompare(right));
+}
+
 function App() {
   const [notes, setNotes] = useState<string[]>([]);
   const [status, setStatus] = useState("Loading…");
@@ -114,6 +133,11 @@ function App() {
     () => tabState.tabs.find((tab) => tab.id === tabState.activeTabId) ?? tabState.tabs[0] ?? null,
     [tabState],
   );
+  const openNotePaths = useMemo(
+    () => tabState.tabs.filter((tab) => tab.kind === "note").map((tab) => tab.path),
+    [tabState.tabs],
+  );
+  const openNotePathsKey = openNotePaths.join("\n");
 
   useEffect(() => {
     tabStateRef.current = tabState;
@@ -122,6 +146,10 @@ function App() {
   useEffect(() => {
     notesRef.current = new Set(notes);
   }, [notes]);
+
+  useEffect(() => {
+    void window.vault.setOpenNotePaths({ paths: openNotePaths }).catch(() => {});
+  }, [openNotePathsKey]);
 
   function closeTab(id: string) {
     setTabState((current) => {
@@ -523,30 +551,35 @@ function App() {
       });
     }
 
-    const unsubscribeChanged = window.vault.onNotesChanged(({ changedNotePaths, notes }) => {
-      const currentNotePaths = new Set(notes);
-      const changedPaths = new Set(changedNotePaths);
-      setNotes(notes);
-      setStatus(`${notes.length} notes`);
+    const unsubscribeTreePatch = window.vault.onNotesTreePatch((patch) => {
+      setNotes((currentNotes) => {
+        const nextNotes = applyNotesTreePatch(currentNotes, patch);
+        setStatus(`${nextNotes.length} notes`);
+        return nextNotes;
+      });
+    });
+    const unsubscribeOpenNoteUpdated = window.vault.onOpenNoteUpdated(({ content, path }) => {
+      applyOpenNoteContent(path, content);
+    });
+    const unsubscribeNoteDeleted = window.vault.onNoteDeleted((notePath) => {
+      setTabState((current) => {
+        const nextTabs = current.tabs.filter((tab) => tab.kind !== "note" || tab.path !== notePath);
+        if (nextTabs.length === current.tabs.length) return current;
 
-      if (changedPaths.size === 0) return;
-
-      for (const tab of tabStateRef.current.tabs) {
-        if (tab.kind !== "note") continue;
-        if (!changedPaths.has(tab.path) || !currentNotePaths.has(tab.path)) continue;
-
-        void window.vault
-          .openNote(tab.path)
-          .then((content) => applyOpenNoteContent(tab.path, content))
-          .catch((watchError: unknown) => {
-            setError(watchError instanceof Error ? watchError.message : String(watchError));
-          });
-      }
+        return ensureOpenTab({
+          activeTabId: nextTabs.some((tab) => tab.id === current.activeTabId)
+            ? current.activeTabId
+            : (nextTabs[0]?.id ?? ""),
+          tabs: nextTabs,
+        });
+      });
     });
     const unsubscribeError = window.vault.onNotesWatchError((message) => setError(message));
 
     return () => {
-      unsubscribeChanged();
+      unsubscribeTreePatch();
+      unsubscribeOpenNoteUpdated();
+      unsubscribeNoteDeleted();
       unsubscribeError();
     };
   }, [editor]);

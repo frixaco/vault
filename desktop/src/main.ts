@@ -1,24 +1,24 @@
-import { spawn } from "node:child_process";
-import { watch, type FSWatcher } from "node:fs";
-import { mkdir, readFile, rename, stat } from "node:fs/promises";
+import { watch } from "node:fs";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, protocol, shell } from "electron";
 import { FffNoteSearch } from "./fff-search.js";
+import { NoteFileService } from "./note-file-service.js";
 import { serveMediaFile } from "./media-response.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
-import type { SearchScope } from "./search-types.js";
+import type { NoteTitleSearchResponse, SearchScope, TitleSearchResult } from "./search-types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(__dirname, "..");
 const notesRoot = path.join(appRoot, "example-notes");
 const vaultDataRoot = path.join(notesRoot, ".vault");
 const vaultAssetsRoot = path.join(vaultDataRoot, "assets");
+const noteFiles = new NoteFileService({
+  ignoredDirectoryNames: [".vault"],
+  notesRoot,
+});
 const noteSearch = new FffNoteSearch(notesRoot, vaultDataRoot);
-const filesBinaryName = process.platform === "win32" ? "files.exe" : "files";
-let notesWatcher: FSWatcher | null = null;
-let notesWatchTimer: NodeJS.Timeout | null = null;
-let pendingChangedNotePaths = new Set<string>();
 const titleBarOptions =
   process.platform === "darwin"
     ? {
@@ -91,137 +91,11 @@ function enableDevReload(window: BrowserWindow) {
 }
 
 function listExampleNotes() {
-  return new Promise<string[]>((resolve, reject) => {
-    const filesBinaryPath = getFilesBinaryPath();
-    const child = spawn(filesBinaryPath, [notesRoot], {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", (error) => {
-      reject(
-        new Error(
-          `Unable to start files helper at ${filesBinaryPath}. Run pnpm build-files before starting the desktop app. ${error.message}`,
-        ),
-      );
-    });
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(stderr.trim() || `files exited with code ${code}`));
-        return;
-      }
-
-      const notes = stdout
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .filter((filePath) => filePath.toLowerCase().endsWith(".md"))
-        .map((filePath) => normalizeNotePath(notesRoot, filePath))
-        .filter((notePath) => notePath.length > 0)
-        .sort((left, right) => left.localeCompare(right));
-
-      resolve(notes);
-    });
-  });
-}
-
-function startNotesWatcher() {
-  if (notesWatcher) return;
-
-  try {
-    notesWatcher = watch(notesRoot, { recursive: true }, (_eventType, filename) => {
-      scheduleNotesChanged(filename?.toString() ?? "");
-    });
-  } catch (error) {
-    console.error("Unable to watch notes", error);
-  }
-}
-
-function scheduleNotesChanged(filename: string) {
-  if (shouldIgnoreWatchPath(filename)) return;
-
-  const notePath = normalizeWatchNotePath(filename);
-  if (notePath) pendingChangedNotePaths.add(notePath);
-
-  if (notesWatchTimer) clearTimeout(notesWatchTimer);
-  notesWatchTimer = setTimeout(() => {
-    notesWatchTimer = null;
-    void broadcastNotesChanged();
-  }, 120);
-}
-
-async function broadcastNotesChanged() {
-  const changedNotePaths = [...pendingChangedNotePaths];
-  pendingChangedNotePaths = new Set();
-
-  try {
-    const notes = await listExampleNotes();
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) {
-        window.webContents.send("notes:changed", { changedNotePaths, notes });
-      }
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) {
-        window.webContents.send("notes:watch-error", message);
-      }
-    }
-  }
-}
-
-function shouldIgnoreWatchPath(filename: string) {
-  const normalized = filename.split(/[\\/]+/).filter(Boolean);
-  return normalized[0] === ".vault";
-}
-
-function normalizeWatchNotePath(filename: string) {
-  const normalized = filename
-    .split(/[\\/]+/)
-    .filter(Boolean)
-    .join("/");
-
-  if (!normalized.toLowerCase().endsWith(".md")) return null;
-  return normalized.replace(/\.md$/i, "");
-}
-
-function getFilesBinaryPath() {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, "bin", filesBinaryName);
-  }
-
-  return path.join(appRoot, "build", "files", "bin", filesBinaryName);
-}
-
-function normalizeNotePath(notesPath: string, filePath: string) {
-  const relativePath = path.relative(notesPath, filePath);
-  const normalizedPath = relativePath.split(path.sep).join("/");
-  return normalizedPath.replace(/\.md$/i, "");
+  return noteFiles.listNotePaths();
 }
 
 function resolveNoteFile(notePath: string) {
-  const normalizedPath = notePath
-    .split(/[\\/]+/)
-    .filter(Boolean)
-    .join(path.sep);
-  const filePath = path.resolve(notesRoot, `${normalizedPath}.md`);
-  const relativePath = path.relative(notesRoot, filePath);
-
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    throw new Error("Note path is outside the vault");
-  }
-
-  return filePath;
+  return noteFiles.resolveNoteFile(notePath);
 }
 
 function assertInsideDirectory(rootPath: string, filePath: string) {
@@ -294,7 +168,7 @@ async function resolveMediaFile(notePath: string, mediaPath: string) {
 }
 
 async function openNote(_: Electron.IpcMainInvokeEvent, notePath: string) {
-  return readFile(resolveNoteFile(notePath), "utf8");
+  return noteFiles.readNote(notePath);
 }
 
 function searchNotes(
@@ -305,7 +179,7 @@ function searchNotes(
 }
 
 function searchNoteTitles(_: Electron.IpcMainInvokeEvent, payload: { query: string }) {
-  return noteSearch.searchTitles(payload.query);
+  return searchCachedNoteTitles(payload.query);
 }
 
 function searchNoteContent(_: Electron.IpcMainInvokeEvent, payload: { query: string }) {
@@ -319,39 +193,113 @@ function trackNoteSearchSelection(
   return noteSearch.trackSelection(payload.query, payload.notePath);
 }
 
-function resolveNoteDirectory(notePath: string) {
-  const normalizedPath = notePath
-    .split(/[\\/]+/)
-    .filter(Boolean)
-    .join(path.sep);
-  const directoryPath = path.resolve(notesRoot, normalizedPath);
-  assertInsideDirectory(notesRoot, directoryPath);
-
-  if (directoryPath === notesRoot) {
-    throw new Error("The vault root cannot be moved");
+function searchCachedNoteTitles(query: string): NoteTitleSearchResponse {
+  const parsed = parseSearchInput(query, "all");
+  if (parsed.scope === "content") {
+    return { query: parsed.query, scope: parsed.scope, title: [] };
   }
 
-  return directoryPath;
+  const normalizedQuery = normalizeSearchText(parsed.query);
+  const words = normalizedQuery.split(" ").filter(Boolean);
+  const title = noteFiles
+    .listNoteMeta()
+    .map((meta) => createTitleSearchCandidate(meta.path, parsed.query, words))
+    .filter((result): result is TitleSearchResult & { score: number } => result !== null)
+    .sort((left, right) => right.score - left.score || left.notePath.localeCompare(right.notePath))
+    .slice(0, 80)
+    .map(({ score: _score, ...result }) => result);
+
+  return {
+    query: parsed.query,
+    scope: parsed.scope,
+    title,
+  };
 }
 
-function getMoveTargetPath(notePath: string, isFolder: boolean) {
-  return isFolder ? resolveNoteDirectory(notePath) : resolveNoteFile(notePath);
+function createTitleSearchCandidate(notePath: string, query: string, words: string[]) {
+  const segments = notePath.split("/");
+  const title = segments.at(-1) ?? notePath;
+  const directory = segments.slice(0, -1).join("/");
+  const normalizedTitle = normalizeSearchText(title);
+  const normalizedPath = normalizeSearchText(notePath);
+
+  if (
+    words.length > 0 &&
+    !words.every((word) => normalizedTitle.includes(word) || normalizedPath.includes(word))
+  ) {
+    return null;
+  }
+
+  const normalizedQuery = normalizeSearchText(query);
+  const exact = Boolean(normalizedQuery) && normalizedTitle === normalizedQuery;
+  let score = 0;
+  if (!normalizedQuery) score = 1;
+  else if (exact) score = 1000;
+  else if (normalizedTitle.startsWith(normalizedQuery)) score = 800;
+  else if (normalizedTitle.includes(normalizedQuery)) score = 600;
+  else score = 300 - Math.max(0, normalizedPath.length - normalizedQuery.length);
+
+  return {
+    directory,
+    exact,
+    id: `title:${notePath}`,
+    notePath,
+    score,
+    title,
+    type: "title" as const,
+  };
+}
+
+function parseSearchInput(query: string, fallbackScope: SearchScope) {
+  const trimmedQuery = query.trim();
+  const lowerQuery = trimmedQuery.toLowerCase();
+
+  if (lowerQuery.startsWith("in:content ")) {
+    return { query: trimmedQuery.slice("in:content ".length).trim(), scope: "content" as const };
+  }
+  if (lowerQuery.startsWith("in:title ")) {
+    return { query: trimmedQuery.slice("in:title ".length).trim(), scope: "title" as const };
+  }
+  if (trimmedQuery.startsWith("/")) {
+    return { query: trimmedQuery.slice(1).trim(), scope: "content" as const };
+  }
+  if (trimmedQuery.startsWith("#")) {
+    return { query: trimmedQuery, scope: "content" as const };
+  }
+
+  return { query: trimmedQuery, scope: fallbackScope };
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 async function moveNote(
   _: Electron.IpcMainInvokeEvent,
   payload: { destinationPath: string; isFolder: boolean; sourcePath: string },
 ) {
-  const sourcePath = getMoveTargetPath(payload.sourcePath, payload.isFolder);
-  const destinationPath = getMoveTargetPath(payload.destinationPath, payload.isFolder);
+  if (payload.sourcePath === payload.destinationPath) return;
 
-  if (sourcePath === destinationPath) return;
+  const destinationPath = payload.isFolder
+    ? noteFiles.resolveNoteDirectory(payload.destinationPath)
+    : noteFiles.resolveNoteFile(payload.destinationPath);
+
   if (await pathExists(destinationPath)) {
     throw new Error(`Destination already exists: "${payload.destinationPath}"`);
   }
 
-  await mkdir(path.dirname(destinationPath), { recursive: true });
-  await rename(sourcePath, destinationPath);
+  await noteFiles.moveNote(payload);
+}
+
+function setOpenNotePaths(_: Electron.IpcMainInvokeEvent, payload: { paths: string[] }) {
+  noteFiles.setOpenNotePaths(payload.paths);
 }
 
 async function openMedia(request: Request) {
@@ -377,6 +325,29 @@ function migrateAttachments() {
 
 function closeWindow(event: Electron.IpcMainInvokeEvent) {
   BrowserWindow.fromWebContents(event.sender)?.close();
+}
+
+function sendToAllWindows(channel: string, payload: unknown) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(channel, payload);
+    }
+  }
+}
+
+function wireNoteFileEvents() {
+  noteFiles.onTreePatch((patch) => {
+    sendToAllWindows("notes:tree-patch", patch);
+  });
+  noteFiles.onOpenNoteUpdated((event) => {
+    sendToAllWindows("notes:open-note-updated", event);
+  });
+  noteFiles.onNoteDeleted((notePath) => {
+    sendToAllWindows("notes:note-deleted", notePath);
+  });
+  noteFiles.onError((message) => {
+    sendToAllWindows("notes:watch-error", message);
+  });
 }
 
 function parsePopupUrl(rawUrl: string) {
@@ -469,8 +440,12 @@ function openTabMenu(
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   protocol.handle("vault-media", openMedia);
+  wireNoteFileEvents();
+  await noteFiles.start().catch((error: unknown) => {
+    console.error("Unable to watch notes", error);
+  });
   ipcMain.handle("attachments:migrate", migrateAttachments);
   ipcMain.handle("notes:list", listExampleNotes);
   ipcMain.handle(
@@ -479,6 +454,7 @@ app.whenReady().then(() => {
       moveNote(event, payload),
   );
   ipcMain.handle("notes:open", openNote);
+  ipcMain.handle("notes:set-open-paths", setOpenNotePaths);
   ipcMain.handle("notes:search", searchNotes);
   ipcMain.handle("notes:search-titles", searchNoteTitles);
   ipcMain.handle("notes:search-content", searchNoteContent);
@@ -489,7 +465,6 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("window:close", closeWindow);
   createWindow();
-  startNotesWatcher();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -505,7 +480,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  if (notesWatchTimer) clearTimeout(notesWatchTimer);
-  notesWatcher?.close();
+  void noteFiles.stop();
   noteSearch.dispose();
 });
