@@ -1,7 +1,10 @@
 import React, { useMemo, useRef, useState } from "react";
 import {
+  Animated,
+  Dimensions,
   Keyboard,
   KeyboardAvoidingView,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -19,6 +22,12 @@ import { useTheme } from "@/hooks/use-theme";
 
 type AppTheme = (typeof Colors)[keyof typeof Colors];
 type EditorMode = "edit" | "preview";
+type NoteListItem = {
+  title: string;
+  folder: string;
+  excerpt: string;
+  updated: string;
+};
 type InlineSegment =
   | { type: "text"; text: string }
   | { type: "code"; marker: string; text: string }
@@ -41,6 +50,41 @@ Start writing. Use **bold**, _italic_, ~~strike~~, \`code\`, and [links](https:/
 const note = "plain markdown";
 \`\`\`
 `;
+
+const Notes: NoteListItem[] = [
+  {
+    title: "Untitled note",
+    folder: "Drafts",
+    excerpt: "Start writing. Use bold, italic, strike, code, and links.",
+    updated: "Now",
+  },
+  {
+    title: "Back Pain Fix",
+    folder: "Health",
+    excerpt: "Elbow stack stretching, Mackenzie exercises, Feb update.",
+    updated: "Yesterday",
+  },
+  {
+    title: "Better portfolio website",
+    folder: "Projects",
+    excerpt: "Tighter case studies, fewer decorative sections, stronger proof.",
+    updated: "Mon",
+  },
+  {
+    title: "How to learn LLMs",
+    folder: "Clippings",
+    excerpt: "Roadmap from zero to fine-tuning and evaluation loops.",
+    updated: "Apr 22",
+  },
+  {
+    title: "Goals for 2026",
+    folder: "Personal",
+    excerpt: "Health, craft, focus, money, and the work that compounds.",
+    updated: "Apr 18",
+  },
+];
+
+const NotesPanelWidth = Dimensions.get("window").width;
 
 function createMarkdownStyle(theme: AppTheme): MarkdownStyle {
   return {
@@ -197,9 +241,57 @@ function createMarkdownStyle(theme: AppTheme): MarkdownStyle {
 export function MarkdownEditor() {
   const theme = useTheme();
   const inputRef = useRef<TextInput>(null);
+  const notesTranslateX = useRef(new Animated.Value(-NotesPanelWidth)).current;
   const [markdown, setMarkdown] = useState(InitialMarkdown);
   const [mode, setMode] = useState<EditorMode>("preview");
+  const [notesOpen, setNotesOpen] = useState(false);
   const markdownStyle = useMemo(() => createMarkdownStyle(theme), [theme]);
+
+  const openNotes = () => {
+    Keyboard.dismiss();
+    setNotesOpen(true);
+    Animated.timing(notesTranslateX, {
+      duration: 180,
+      toValue: 0,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const closeNotes = () => {
+    Animated.timing(notesTranslateX, {
+      duration: 150,
+      toValue: -NotesPanelWidth,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setNotesOpen(false);
+      }
+    });
+  };
+
+  const swipeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: ({ nativeEvent }, gesture) => {
+          const horizontalSwipe =
+            Math.abs(gesture.dx) > 16 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4;
+          const openingFromEdge = !notesOpen && nativeEvent.pageX < 32 && gesture.dx > 0;
+          const closingPanel = notesOpen && gesture.dx < 0;
+
+          return horizontalSwipe && (openingFromEdge || closingPanel);
+        },
+        onPanResponderRelease: (_event, gesture) => {
+          if (!notesOpen && gesture.dx > 56) {
+            Keyboard.dismiss();
+            openNotes();
+          }
+          if (notesOpen && gesture.dx < -48) {
+            closeNotes();
+          }
+        },
+      }),
+    [notesOpen],
+  );
 
   const enterEditMode = () => {
     setMode("edit");
@@ -214,7 +306,10 @@ export function MarkdownEditor() {
   const isEditing = mode === "edit";
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: theme.background }]}
+      {...swipeResponder.panHandlers}
+    >
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.keyboardView}
@@ -278,7 +373,88 @@ export function MarkdownEditor() {
           )}
         </Pressable>
       </KeyboardAvoidingView>
+
+      {notesOpen && (
+        <View style={styles.notesOverlay}>
+          <Pressable
+            accessibilityLabel="Close notes"
+            onPress={closeNotes}
+            style={styles.notesScrim}
+          />
+          <Animated.View
+            style={[
+              styles.notesAnimatedPanel,
+              {
+                transform: [{ translateX: notesTranslateX }],
+              },
+            ]}
+          >
+            <NotesPanel notes={Notes} onClose={closeNotes} theme={theme} />
+          </Animated.View>
+        </View>
+      )}
     </SafeAreaView>
+  );
+}
+
+function NotesPanel({
+  notes,
+  onClose,
+  theme,
+}: {
+  notes: NoteListItem[];
+  onClose: () => void;
+  theme: AppTheme;
+}) {
+  return (
+    <View
+      style={[
+        styles.notesPanel,
+        {
+          backgroundColor: theme.background,
+          borderRightColor: theme.hairline,
+          shadowColor: theme.text,
+        },
+      ]}
+    >
+      <View style={[styles.notesHeader, { borderBottomColor: theme.hairline }]}>
+        <Text style={[styles.notesTitle, { color: theme.textSecondary }]}>Notes</Text>
+        <Pressable
+          accessibilityLabel="Close notes"
+          onPress={onClose}
+          style={styles.notesCloseButton}
+        >
+          <CloseIcon color={theme.textSecondary} />
+        </Pressable>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.notesList}>
+        {notes.map((note, index) => (
+          <Pressable
+            key={note.title}
+            onPress={onClose}
+            style={[
+              styles.noteRow,
+              {
+                backgroundColor: index === 0 ? theme.active : theme.background,
+                borderBottomColor: theme.hairline,
+              },
+            ]}
+          >
+            <View style={styles.noteRowTop}>
+              <Text numberOfLines={1} style={[styles.noteTitle, { color: theme.text }]}>
+                {note.title}
+              </Text>
+              <Text style={[styles.noteDate, { color: theme.textFaint }]}>{note.updated}</Text>
+            </View>
+            <Text style={[styles.noteFolder, { color: theme.accent }]}>{note.folder}</Text>
+            <Text numberOfLines={2} style={[styles.noteExcerpt, { color: theme.textSecondary }]}>
+              {note.excerpt}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -529,6 +705,22 @@ function PreviewIcon({ color, accentColor }: { color: string; accentColor: strin
   );
 }
 
+function CloseIcon({ color }: { color: string }) {
+  return (
+    <View style={styles.closeIcon}>
+      <View
+        style={[styles.closeIconLine, { backgroundColor: color, transform: [{ rotate: "45deg" }] }]}
+      />
+      <View
+        style={[
+          styles.closeIconLine,
+          { backgroundColor: color, transform: [{ rotate: "-45deg" }] },
+        ]}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -537,6 +729,86 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.four,
+  },
+  notesOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: "row",
+  },
+  notesScrim: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  notesAnimatedPanel: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  notesPanel: {
+    borderRightWidth: 0,
+    height: "100%",
+    shadowOffset: {
+      width: 8,
+      height: 0,
+    },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    width: "100%",
+    zIndex: 1,
+  },
+  notesHeader: {
+    alignItems: "center",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+  },
+  notesTitle: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    letterSpacing: 0,
+    lineHeight: 16,
+  },
+  notesCloseButton: {
+    alignItems: "center",
+    height: 28,
+    justifyContent: "center",
+    width: 28,
+  },
+  notesList: {
+    paddingBottom: Spacing.four,
+  },
+  noteRow: {
+    borderBottomWidth: 1,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+  },
+  noteRowTop: {
+    alignItems: "baseline",
+    flexDirection: "row",
+    gap: Spacing.two,
+    justifyContent: "space-between",
+  },
+  noteTitle: {
+    flex: 1,
+    fontFamily: Fonts.serifSemiBold,
+    fontSize: 17,
+    fontWeight: "600",
+    lineHeight: 22,
+  },
+  noteDate: {
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  noteFolder: {
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    lineHeight: 18,
+    marginTop: Spacing.one,
+  },
+  noteExcerpt: {
+    fontFamily: Fonts.serif,
+    fontSize: 14,
+    lineHeight: 19,
+    marginTop: Spacing.one,
   },
   source: {
     flex: 1,
@@ -644,5 +916,15 @@ const styles = StyleSheet.create({
   previewIconRule: {
     height: 2,
     width: 13,
+  },
+  closeIcon: {
+    height: 14,
+    justifyContent: "center",
+    width: 14,
+  },
+  closeIconLine: {
+    height: 1,
+    position: "absolute",
+    width: 14,
   },
 });
