@@ -111,6 +111,10 @@ export class NoteFileService {
   }
 
   async createNote(content: string) {
+    if (!content.trim()) {
+      throw new Error("New note needs content before it can be saved");
+    }
+
     const notePath = await this.getAvailableRootNotePath(getNoteTitleFromContent(content));
     await this.writeNote(notePath, content);
     return { content, path: notePath };

@@ -8,6 +8,12 @@ export type EditorTab =
   | {
       content: string;
       id: string;
+      kind: "draft";
+      label: string;
+    }
+  | {
+      content: string;
+      id: string;
       kind: "note";
       label: string;
       path: string;
@@ -26,7 +32,17 @@ export function createTempTab(): EditorTab {
     content: "",
     id: `temp:${Date.now()}:${nextTempId}`,
     kind: "temp",
-    label: "Untitled",
+    label: "",
+  };
+}
+
+export function createDraftTab(): EditorTab {
+  nextTempId += 1;
+  return {
+    content: "",
+    id: `draft:${Date.now()}:${nextTempId}`,
+    kind: "draft",
+    label: "",
   };
 }
 

@@ -10,7 +10,7 @@ import { FileTreeFeature } from "./file-tree-feature.js";
 import { vaultApi } from "./renderer-api.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { TabBar } from "./tab-bar.js";
-import { createInitialTabState, createNoteTab, createTempTab, ensureOpenTab } from "./tabs.js";
+import { createDraftTab, createInitialTabState, createNoteTab, ensureOpenTab } from "./tabs.js";
 import type { NotesTreePatchEvent } from "./note-events.js";
 import type { NoteSearchResult, SearchJump } from "./search-types.js";
 
@@ -21,7 +21,7 @@ function isBlankMarkdown(content: string) {
 function getTitleFromMarkdown(content: string) {
   const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
   const title = firstLine.replace(/^#{1,6}\s+/, "").trim();
-  return title || "Untitled";
+  return title;
 }
 
 function stripTreeDirectory(path: string) {
@@ -187,13 +187,8 @@ function App() {
     }
   }
 
-  const openNewTempNote = useCallback(() => {
-    const activeTab = tabStateRef.current.tabs.find(
-      (tab) => tab.id === tabStateRef.current.activeTabId,
-    );
-    if (activeTab?.kind === "temp" && isBlankMarkdown(activeTab.content)) return;
-
-    const tab = createTempTab();
+  const openNewDraftNote = useCallback(() => {
+    const tab = createDraftTab();
     setTabState((current) => ({
       activeTabId: tab.id,
       tabs: [...current.tabs, tab],
@@ -366,7 +361,7 @@ function App() {
             ? {
                 ...tab,
                 content,
-                label: tab.kind === "temp" ? getTitleFromMarkdown(content) : tab.label,
+                label: tab.kind === "draft" ? getTitleFromMarkdown(content) : tab.label,
               }
             : tab,
         ),
@@ -391,6 +386,10 @@ function App() {
       }
 
       if (tab.kind === "temp") {
+        continue;
+      }
+
+      if (tab.kind === "draft") {
         if (isBlankMarkdown(tab.content) || creatingTempTabsRef.current.has(tab.id)) continue;
       } else if (lastSavedContentRef.current.get(tab.path) === tab.content) {
         continue;
@@ -401,7 +400,9 @@ function App() {
         const latestTab = tabStateRef.current.tabs.find((candidate) => candidate.id === tab.id);
         if (!latestTab) return;
 
-        if (latestTab.kind === "temp") {
+        if (latestTab.kind === "temp") return;
+
+        if (latestTab.kind === "draft") {
           if (isBlankMarkdown(latestTab.content) || creatingTempTabsRef.current.has(latestTab.id)) {
             return;
           }
@@ -420,7 +421,7 @@ function App() {
               );
               setTabState((current) => {
                 const currentTab = current.tabs.find((candidate) => candidate.id === latestTab.id);
-                if (currentTab?.kind !== "temp") return current;
+                if (currentTab?.kind !== "draft") return current;
 
                 const noteTab = createNoteTab(createdNote.path, currentTab.content);
                 return {
@@ -582,10 +583,10 @@ function App() {
         setSettingsOpen((open) => !open);
       } else if (mod && event.key.toLowerCase() === "n") {
         event.preventDefault();
-        openNewTempNote();
+        openNewDraftNote();
       } else if (mod && event.key.toLowerCase() === "w") {
         event.preventDefault();
-        if (activeTab?.kind === "temp") {
+        if (activeTab?.kind === "temp" || activeTab?.kind === "draft") {
           closeTab(activeTab.id);
         } else if (activeTab) {
           closeTab(activeTab.id);
@@ -596,7 +597,7 @@ function App() {
     }
     window.addEventListener("keydown", handleKey, true);
     return () => window.removeEventListener("keydown", handleKey, true);
-  }, [sidebarOpen, activeTab, openNewTempNote]);
+  }, [sidebarOpen, activeTab, openNewDraftNote]);
 
   return (
     <main className="relative h-full overflow-hidden bg-bg">
