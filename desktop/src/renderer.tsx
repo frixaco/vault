@@ -1,4 +1,3 @@
-import Link from "@tiptap/extension-link";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { Markdown } from "@tiptap/markdown";
 import StarterKit from "@tiptap/starter-kit";
@@ -6,12 +5,21 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CommandPalette } from "./command-palette.js";
+import { VaultEmbed, VaultLink } from "./editor-embed.js";
 import { setCurrentMarkdownNotePath, VaultImage, VaultMedia } from "./editor-media.js";
 import { IconClose } from "./icon-close.js";
 import { cn } from "./lib/utils.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { createInitialTabState, createNoteTab, createTempTab, ensureOpenTab } from "./tabs.js";
 import type { AttachmentsMigrationResult } from "./media-types.js";
+import type {
+  NoteContentSearchResponse,
+  NoteSearchResponse,
+  NoteSearchResult,
+  NoteTitleSearchResponse,
+  SearchJump,
+  SearchScope,
+} from "./search-types.js";
 
 declare global {
   interface Window {
@@ -25,10 +33,15 @@ declare global {
         sourcePath: string;
       }) => Promise<void>;
       openNote: (path: string) => Promise<string>;
+      openPopup: (url: string) => Promise<void>;
       openTabMenu: (payload: {
         hasOthers: boolean;
         hasRight: boolean;
       }) => Promise<"close" | "close-others" | "close-right" | null>;
+      searchNoteContent: (payload: { query: string }) => Promise<NoteContentSearchResponse>;
+      searchNoteTitles: (payload: { query: string }) => Promise<NoteTitleSearchResponse>;
+      searchNotes: (payload: { query: string; scope: SearchScope }) => Promise<NoteSearchResponse>;
+      trackNoteSearchSelection: (payload: { notePath: string; query: string }) => Promise<void>;
     };
   }
 }
@@ -49,6 +62,11 @@ function getMovedPath(sourcePath: string, directoryPath: string | null) {
   const basename = getPathBasename(sourcePath);
   return directoryPath ? `${stripTreeDirectory(directoryPath)}/${basename}` : basename;
 }
+
+type PendingSearchJump = {
+  jump: SearchJump;
+  notePath: string;
+};
 
 function remapNotePath(
   notePath: string,
@@ -82,6 +100,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingSearchJump, setPendingSearchJump] = useState<PendingSearchJump | null>(null);
   const [tabState, setTabState] = useState(createInitialTabState);
   const tabStateRef = useRef(tabState);
   const notesRef = useRef(new Set<string>());
@@ -175,8 +194,9 @@ function App() {
     }));
   }, []);
 
-  const openMarkdownNote = useCallback(async (notePath: string) => {
+  const openMarkdownNote = useCallback(async (notePath: string, jump?: SearchJump) => {
     if (!notesRef.current.has(notePath)) return;
+    if (jump) setPendingSearchJump({ jump, notePath });
 
     const existingTab = tabStateRef.current.tabs.find(
       (tab) => tab.kind === "note" && tab.path === notePath,
@@ -368,12 +388,13 @@ function App() {
       StarterKit.configure({
         link: false,
       }),
-      Link.configure({
+      VaultLink.configure({
         enableClickSelection: false,
         openOnClick: false,
       }),
       VaultImage,
       VaultMedia,
+      VaultEmbed,
       Markdown,
     ],
     editorProps: {
@@ -431,6 +452,16 @@ function App() {
       editorPaneRef.current?.scrollTo({ left: 0, top: 0 });
     });
   }, [activeTab?.id, editor]);
+
+  useEffect(() => {
+    if (!editor || !activeTab || activeTab.kind !== "note" || !pendingSearchJump) return;
+    if (pendingSearchJump.notePath !== activeTab.path) return;
+
+    queueMicrotask(() => {
+      selectSearchJump(editor, pendingSearchJump.jump);
+      setPendingSearchJump(null);
+    });
+  }, [activeTab, editor, pendingSearchJump]);
 
   useEffect(() => {
     let active = true;
@@ -575,8 +606,17 @@ function App() {
       {paletteOpen ? (
         <CommandPalette
           onClose={() => setPaletteOpen(false)}
-          onNewNote={openNewTempNote}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenNote={(result: NoteSearchResult, query) => {
+            void window.vault
+              .trackNoteSearchSelection({ notePath: result.notePath, query })
+              .catch(() => {});
+            void openMarkdownNote(
+              result.notePath,
+              result.type === "content" ? result.jump : undefined,
+            );
+          }}
+          searchNoteContent={window.vault.searchNoteContent}
+          searchNoteTitles={window.vault.searchNoteTitles}
         />
       ) : null}
 
@@ -596,3 +636,57 @@ createRoot(root).render(
     <App />
   </StrictMode>,
 );
+
+function selectSearchJump(editor: NonNullable<ReturnType<typeof useEditor>>, jump: SearchJump) {
+  const range = findSearchRange(editor, jump);
+  if (!range) return false;
+
+  editor.commands.setTextSelection(range);
+  editor.commands.focus();
+  editor.commands.scrollIntoView();
+  return true;
+}
+
+function findSearchRange(editor: NonNullable<ReturnType<typeof useEditor>>, jump: SearchJump) {
+  const candidates = getSearchCandidates(jump);
+  const textIndex = buildEditorTextIndex(editor);
+  const normalizedText = textIndex.text.toLowerCase();
+
+  for (const candidate of candidates) {
+    const normalizedCandidate = candidate.toLowerCase();
+    const index = normalizedText.indexOf(normalizedCandidate);
+    if (index < 0) continue;
+
+    const from = textIndex.positions[index];
+    const to = textIndex.positions[index + candidate.length - 1];
+    if (from === undefined || to === undefined) continue;
+
+    return { from, to: to + 1 };
+  }
+
+  return null;
+}
+
+function getSearchCandidates(jump: SearchJump) {
+  const highlighted = jump.lineContent.slice(jump.matchStart, jump.matchEnd).trim();
+  const line = jump.lineContent.trim();
+  const query = jump.query.trim();
+
+  return [highlighted, line, query].filter((candidate) => candidate.length > 0);
+}
+
+function buildEditorTextIndex(editor: NonNullable<ReturnType<typeof useEditor>>) {
+  const positions: number[] = [];
+  let text = "";
+
+  editor.state.doc.descendants((node, position) => {
+    if (!node.isText || !node.text) return;
+
+    for (let index = 0; index < node.text.length; index += 1) {
+      text += node.text[index];
+      positions.push(position + index);
+    }
+  });
+
+  return { positions, text };
+}

@@ -3,15 +3,18 @@ import { watch } from "node:fs";
 import { mkdir, readFile, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu, protocol } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, protocol, shell } from "electron";
+import { FffNoteSearch } from "./fff-search.js";
 import { serveMediaFile } from "./media-response.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
+import type { SearchScope } from "./search-types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(__dirname, "..");
 const notesRoot = path.join(appRoot, "example-notes");
 const vaultDataRoot = path.join(notesRoot, ".vault");
 const vaultAssetsRoot = path.join(vaultDataRoot, "assets");
+const noteSearch = new FffNoteSearch(notesRoot, vaultDataRoot);
 const filesBinaryName = process.platform === "win32" ? "files.exe" : "files";
 const titleBarOptions =
   process.platform === "darwin"
@@ -230,6 +233,28 @@ async function openNote(_: Electron.IpcMainInvokeEvent, notePath: string) {
   return readFile(resolveNoteFile(notePath), "utf8");
 }
 
+function searchNotes(
+  _: Electron.IpcMainInvokeEvent,
+  payload: { query: string; scope: SearchScope },
+) {
+  return noteSearch.search(payload.query, payload.scope);
+}
+
+function searchNoteTitles(_: Electron.IpcMainInvokeEvent, payload: { query: string }) {
+  return noteSearch.searchTitles(payload.query);
+}
+
+function searchNoteContent(_: Electron.IpcMainInvokeEvent, payload: { query: string }) {
+  return noteSearch.searchContent(payload.query);
+}
+
+function trackNoteSearchSelection(
+  _: Electron.IpcMainInvokeEvent,
+  payload: { notePath: string; query: string },
+) {
+  return noteSearch.trackSelection(payload.query, payload.notePath);
+}
+
 function resolveNoteDirectory(notePath: string) {
   const normalizedPath = notePath
     .split(/[\\/]+/)
@@ -290,6 +315,54 @@ function closeWindow(event: Electron.IpcMainInvokeEvent) {
   BrowserWindow.fromWebContents(event.sender)?.close();
 }
 
+function parsePopupUrl(rawUrl: string) {
+  const url = new URL(rawUrl);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Only HTTP and HTTPS links can be opened in popup windows");
+  }
+  return url;
+}
+
+async function openLinkPopup(event: Electron.IpcMainInvokeEvent, rawUrl: string) {
+  const url = parsePopupUrl(rawUrl);
+  const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const popup = new BrowserWindow({
+    width: 550,
+    height: 360,
+    minWidth: 320,
+    minHeight: 220,
+    parent,
+    title: url.hostname,
+    backgroundColor: "#111111",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  let wasClosed = false;
+
+  popup.on("closed", () => {
+    wasClosed = true;
+  });
+
+  popup.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      void shell.openExternal(parsePopupUrl(url).toString());
+    } catch {
+      // Ignore non-web popup requests from external pages.
+    }
+    return { action: "deny" };
+  });
+
+  try {
+    await popup.loadURL(url.toString());
+  } catch (error) {
+    if (wasClosed || popup.isDestroyed()) return;
+    throw error;
+  }
+}
+
 type TabMenuAction = "close" | "close-others" | "close-right" | null;
 
 function openTabMenu(
@@ -342,6 +415,11 @@ app.whenReady().then(() => {
       moveNote(event, payload),
   );
   ipcMain.handle("notes:open", openNote);
+  ipcMain.handle("notes:search", searchNotes);
+  ipcMain.handle("notes:search-titles", searchNoteTitles);
+  ipcMain.handle("notes:search-content", searchNoteContent);
+  ipcMain.handle("notes:search-track", trackNoteSearchSelection);
+  ipcMain.handle("links:open-popup", openLinkPopup);
   ipcMain.handle("tabs:menu", (event, payload: { hasOthers: boolean; hasRight: boolean }) =>
     openTabMenu(event, payload),
   );
@@ -359,4 +437,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  noteSearch.dispose();
 });

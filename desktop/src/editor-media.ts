@@ -1,5 +1,6 @@
 import Image from "@tiptap/extension-image";
 import { mergeAttributes, Node as TiptapNode } from "@tiptap/react";
+import { getEmbedForUrl } from "./embed-providers.js";
 import { getMediaKind } from "./media-types.js";
 
 let currentMarkdownNotePath = "";
@@ -16,6 +17,14 @@ function getVaultMediaUrl(notePath: string, mediaPath: string) {
 
 function shouldServeFromVault(mediaPath: string) {
   return mediaPath.length > 0 && !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(mediaPath);
+}
+
+function isDataImageSource(src: string) {
+  return /^data:image\//i.test(src);
+}
+
+function shouldRenderAsImage(src: string, vaultSrc: string | null) {
+  return Boolean(vaultSrc) || isDataImageSource(src);
 }
 
 function formatMarkdownLinkTarget(target: string) {
@@ -173,6 +182,21 @@ export const VaultImage = Image.extend({
     const src = String(token.href ?? "");
     const vaultSrc = shouldServeFromVault(src) ? src : null;
     const vaultKind = vaultSrc ? getMediaKind(vaultSrc) : null;
+    const embed = getEmbedForUrl(src, token.text);
+
+    if (embed) {
+      return helpers.createNode("vaultEmbed", {
+        alt: token.text,
+        kind: embed.kind,
+        markdownStyle: "image",
+        markdownTitle: token.title ?? "",
+        openUrl: embed.openUrl,
+        provider: embed.provider,
+        thumbnailUrl: embed.thumbnailUrl,
+        title: token.text || token.title || embed.title,
+        url: embed.url,
+      });
+    }
 
     if (vaultSrc && vaultKind && vaultKind !== "image") {
       return helpers.createNode("vaultMedia", {
@@ -185,6 +209,18 @@ export const VaultImage = Image.extend({
         src: getVaultMediaUrl(currentMarkdownNotePath, vaultSrc),
         path: vaultSrc,
       });
+    }
+
+    if (!shouldRenderAsImage(src, vaultSrc)) {
+      return helpers.createTextNode(token.text || src, [
+        {
+          attrs: {
+            href: src,
+            title: token.title || null,
+          },
+          type: "link",
+        },
+      ]);
     }
 
     return helpers.createNode("image", {
