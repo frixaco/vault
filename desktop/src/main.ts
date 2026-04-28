@@ -8,6 +8,7 @@ import { NoteFileService } from "./note-file-service.js";
 import { serveMediaFile } from "./media-response.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
 import type { NoteTitleSearchResponse, SearchScope, TitleSearchResult } from "./search-types.js";
+import { getNoteDisplayParts, normalizeSearchText, parseSearchInput } from "./search-utils.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(__dirname, "..");
@@ -217,9 +218,7 @@ function searchCachedNoteTitles(query: string): NoteTitleSearchResponse {
 }
 
 function createTitleSearchCandidate(notePath: string, query: string, words: string[]) {
-  const segments = notePath.split("/");
-  const title = segments.at(-1) ?? notePath;
-  const directory = segments.slice(0, -1).join("/");
+  const { directory, title } = getNoteDisplayParts(notePath);
   const normalizedTitle = normalizeSearchText(title);
   const normalizedPath = normalizeSearchText(notePath);
 
@@ -248,37 +247,6 @@ function createTitleSearchCandidate(notePath: string, query: string, words: stri
     title,
     type: "title" as const,
   };
-}
-
-function parseSearchInput(query: string, fallbackScope: SearchScope) {
-  const trimmedQuery = query.trim();
-  const lowerQuery = trimmedQuery.toLowerCase();
-
-  if (lowerQuery.startsWith("in:content ")) {
-    return { query: trimmedQuery.slice("in:content ".length).trim(), scope: "content" as const };
-  }
-  if (lowerQuery.startsWith("in:title ")) {
-    return { query: trimmedQuery.slice("in:title ".length).trim(), scope: "title" as const };
-  }
-  if (trimmedQuery.startsWith("/")) {
-    return { query: trimmedQuery.slice(1).trim(), scope: "content" as const };
-  }
-  if (trimmedQuery.startsWith("#")) {
-    return { query: trimmedQuery, scope: "content" as const };
-  }
-
-  return { query: trimmedQuery, scope: fallbackScope };
-}
-
-function normalizeSearchText(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
 }
 
 async function moveNote(
