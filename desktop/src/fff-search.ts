@@ -16,10 +16,10 @@ import {
   createContentResult,
   createTitleResult,
   matchesTitleQuery,
-  normalizeNotePath,
   normalizeSearchResultPath,
   parseSearchInput,
 } from "./search-utils.js";
+import { normalizeNotePath } from "./vault-paths.js";
 
 type NativePointer = unknown;
 

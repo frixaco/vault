@@ -9,6 +9,7 @@ import { serveMediaFile } from "./media-response.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
 import type { NoteTitleSearchResponse, SearchScope, TitleSearchResult } from "./search-types.js";
 import { getNoteDisplayParts, normalizeSearchText, parseSearchInput } from "./search-utils.js";
+import { assertInsideDirectory } from "./vault-paths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(__dirname, "..");
@@ -97,14 +98,6 @@ function listExampleNotes() {
 
 function resolveNoteFile(notePath: string) {
   return noteFiles.resolveNoteFile(notePath);
-}
-
-function assertInsideDirectory(rootPath: string, filePath: string) {
-  const relativePath = path.relative(rootPath, filePath);
-
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    throw new Error("Path is outside the vault");
-  }
 }
 
 async function fileExists(filePath: string) {

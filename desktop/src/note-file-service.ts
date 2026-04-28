@@ -2,6 +2,14 @@ import { mkdir, opendir, readFile, realpath, rename, stat } from "node:fs/promis
 import path from "node:path";
 import watcher from "@parcel/watcher";
 import type { NoteMeta, NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
+import {
+  isMarkdownFile,
+  normalizeNoteFilePath,
+  normalizeNotePath,
+  relativeVaultPath,
+  resolveNoteDirectoryPath,
+  resolveNoteFilePath,
+} from "./vault-paths.js";
 
 type WatchEvent = {
   path: string;
@@ -120,16 +128,11 @@ export class NoteFileService {
   }
 
   resolveNoteFile(notePath: string) {
-    const normalizedPath = normalizeNotePath(notePath).split("/").join(path.sep);
-    const filePath = path.resolve(this.notesRoot, `${normalizedPath}.md`);
-    this.assertInsideNotesRoot(filePath);
-    return filePath;
+    return resolveNoteFilePath(this.notesRoot, notePath);
   }
 
   resolveNoteDirectory(notePath: string) {
-    const normalizedPath = normalizeNotePath(notePath).split("/").join(path.sep);
-    const directoryPath = path.resolve(this.notesRoot, normalizedPath);
-    this.assertInsideNotesRoot(directoryPath);
+    const directoryPath = resolveNoteDirectoryPath(this.notesRoot, notePath);
 
     if (directoryPath === this.notesRoot) {
       throw new Error("The vault root cannot be moved");
@@ -400,31 +403,19 @@ export class NoteFileService {
   }
 
   private shouldIgnoreAbsolutePath(filePath: string) {
-    const relativePath = path.relative(this.notesRoot, filePath);
-    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) return true;
-    return relativePath.split(path.sep).some((segment) => this.ignoredDirectoryNames.has(segment));
+    const relativePath = relativeVaultPath(this.notesRoot, filePath);
+    if (relativePath === null) return true;
+    return relativePath.split("/").some((segment) => this.ignoredDirectoryNames.has(segment));
   }
 
   private normalizeAbsoluteNotePath(filePath: string) {
-    const relativePath = path.relative(this.notesRoot, filePath);
-    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) return null;
-    if (!isMarkdownFile(relativePath)) return null;
-
-    return normalizeNotePath(relativePath).replace(/\.md$/i, "");
+    const relativePath = relativeVaultPath(this.notesRoot, filePath);
+    if (relativePath === null) return null;
+    return normalizeNoteFilePath(relativePath);
   }
 
   private normalizeAbsoluteDirectoryPath(directoryPath: string) {
-    const relativePath = path.relative(this.notesRoot, directoryPath);
-    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) return null;
-    return normalizeNotePath(relativePath);
-  }
-
-  private assertInsideNotesRoot(filePath: string) {
-    const relativePath = path.relative(this.notesRoot, filePath);
-
-    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-      throw new Error("Path is outside the vault");
-    }
+    return relativeVaultPath(this.notesRoot, directoryPath);
   }
 
   private emitTreePatch(event: NotesTreePatchEvent) {
@@ -460,16 +451,4 @@ function createNoteMeta(notePath: string, mtimeMs: number, size: number): NoteMe
     size,
     title: fileName,
   };
-}
-
-function isMarkdownFile(filePath: string) {
-  return filePath.toLowerCase().endsWith(".md");
-}
-
-function normalizeNotePath(notePath: string) {
-  return notePath
-    .replace(/\.md$/i, "")
-    .split(/[\\/]+/)
-    .filter(Boolean)
-    .join("/");
 }

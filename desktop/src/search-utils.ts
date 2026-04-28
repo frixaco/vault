@@ -1,4 +1,5 @@
 import type { ContentSearchResult, SearchScope, TitleSearchResult } from "./search-types.js";
+import { normalizeNoteFilePath } from "./vault-paths.js";
 
 export function parseSearchInput(query: string, fallbackScope: SearchScope) {
   const trimmedQuery = query.trim();
@@ -32,17 +33,7 @@ export function normalizeSearchText(value: string) {
 }
 
 export function normalizeSearchResultPath(relativePath: string) {
-  const notePath = normalizeNotePath(relativePath);
-  if (!notePath.toLowerCase().endsWith(".md")) return null;
-
-  return notePath.replace(/\.md$/i, "");
-}
-
-export function normalizeNotePath(notePath: string) {
-  return notePath
-    .split(/[\\/]+/)
-    .filter(Boolean)
-    .join("/");
+  return normalizeNoteFilePath(relativePath);
 }
 
 export function matchesTitleQuery(result: TitleSearchResult, query: string) {
