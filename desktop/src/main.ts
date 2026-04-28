@@ -6,10 +6,10 @@ import { app, BrowserWindow, ipcMain, Menu, protocol, shell } from "electron";
 import { FffNoteSearch } from "./fff-search.js";
 import { NoteFileService } from "./note-file-service.js";
 import { serveMediaFile } from "./media-response.js";
+import { VaultMediaResolver } from "./media-resolver.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
 import type { NoteTitleSearchResponse, SearchScope, TitleSearchResult } from "./search-types.js";
 import { getNoteDisplayParts, normalizeSearchText, parseSearchInput } from "./search-utils.js";
-import { assertInsideDirectory } from "./vault-paths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(__dirname, "..");
@@ -21,6 +21,11 @@ const noteFiles = new NoteFileService({
   notesRoot,
 });
 const noteSearch = new FffNoteSearch(notesRoot, vaultDataRoot);
+const mediaResolver = new VaultMediaResolver({
+  notesRoot,
+  resolveNoteFile: (notePath) => noteFiles.resolveNoteFile(notePath),
+  vaultAssetsRoot,
+});
 const titleBarOptions =
   process.platform === "darwin"
     ? {
@@ -96,19 +101,6 @@ function listExampleNotes() {
   return noteFiles.listNotePaths();
 }
 
-function resolveNoteFile(notePath: string) {
-  return noteFiles.resolveNoteFile(notePath);
-}
-
-async function fileExists(filePath: string) {
-  try {
-    const fileStat = await stat(filePath);
-    return fileStat.isFile();
-  } catch {
-    return false;
-  }
-}
-
 async function pathExists(filePath: string) {
   try {
     await stat(filePath);
@@ -116,49 +108,6 @@ async function pathExists(filePath: string) {
   } catch {
     return false;
   }
-}
-
-function getNoteAssetDirectory(notePath: string) {
-  if (!notePath) {
-    throw new Error("Media needs a note path");
-  }
-
-  const noteFilePath = resolveNoteFile(notePath);
-  const noteAssetPath = path
-    .relative(notesRoot, noteFilePath)
-    .replace(/\.md$/i, "")
-    .split(path.sep)
-    .filter(Boolean);
-
-  return path.join(vaultAssetsRoot, ...noteAssetPath);
-}
-
-function normalizeMediaPath(mediaPath: string) {
-  return mediaPath
-    .replace(/^[/\\]+/, "")
-    .split(/[\\/]+/)
-    .filter(Boolean)
-    .join(path.sep);
-}
-
-async function resolveMediaFile(notePath: string, mediaPath: string) {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(mediaPath)) {
-    throw new Error("External media paths are not served by the vault");
-  }
-
-  const normalizedMediaPath = normalizeMediaPath(mediaPath);
-  if (!normalizedMediaPath) {
-    throw new Error("Media path is empty");
-  }
-
-  const baseDirectory = mediaPath.startsWith("/")
-    ? vaultAssetsRoot
-    : getNoteAssetDirectory(notePath);
-  const filePath = path.resolve(baseDirectory, normalizedMediaPath);
-  assertInsideDirectory(vaultAssetsRoot, filePath);
-  if (await fileExists(filePath)) return filePath;
-
-  throw new Error("Media file was not found");
 }
 
 async function openNote(_: Electron.IpcMainInvokeEvent, notePath: string) {
@@ -272,7 +221,10 @@ async function openMedia(request: Request) {
       return new Response("Missing media path", { status: 400 });
     }
 
-    const filePath = await resolveMediaFile(url.searchParams.get("note") ?? "", mediaPath);
+    const filePath = await mediaResolver.resolveMediaFile(
+      url.searchParams.get("note") ?? "",
+      mediaPath,
+    );
     return serveMediaFile(request, filePath);
   } catch (mediaError: unknown) {
     const message = mediaError instanceof Error ? mediaError.message : String(mediaError);
