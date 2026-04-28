@@ -104,10 +104,7 @@ function App() {
     [tabState.tabs],
   );
   const openNotePathsKey = openNotePaths.join("\n");
-  const activeNoteTitle =
-    activeTab?.kind === "note"
-      ? getPathBasename(activeTab.path)
-      : getTitleFromMarkdown(activeTab?.content ?? "");
+  const activeNoteTitle = activeTab?.kind === "note" ? getPathBasename(activeTab.path) : "";
 
   useEffect(() => {
     tabStateRef.current = tabState;
@@ -423,7 +420,7 @@ function App() {
                 const currentTab = current.tabs.find((candidate) => candidate.id === latestTab.id);
                 if (currentTab?.kind !== "draft") return current;
 
-                const noteTab = createNoteTab(createdNote.path, currentTab.content);
+                const noteTab = createNoteTab(createdNote.path, createdNote.content);
                 return {
                   activeTabId:
                     current.activeTabId === currentTab.id ? noteTab.id : current.activeTabId,
@@ -610,7 +607,7 @@ function App() {
         className="fixed inset-x-0 top-10 bottom-tabbar min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
         ref={editorPaneRef}
       >
-        <div className="editor-title">{activeNoteTitle}</div>
+        {activeNoteTitle ? <div className="editor-title">{activeNoteTitle}</div> : null}
         <EditorContent editor={editor} />
       </section>
 

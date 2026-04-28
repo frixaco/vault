@@ -107,7 +107,7 @@ export class NoteFileService {
   }
 
   async readNote(notePath: string) {
-    return readFile(this.resolveNoteFile(notePath), "utf8");
+    return stripMatchingTitleLine(notePath, await readFile(this.resolveNoteFile(notePath), "utf8"));
   }
 
   async createNote(content: string) {
@@ -115,9 +115,10 @@ export class NoteFileService {
       throw new Error("New note needs content before it can be saved");
     }
 
-    const notePath = await this.getAvailableRootNotePath(getNoteTitleFromContent(content));
-    await this.writeNote(notePath, content);
-    return { content, path: notePath };
+    const { body, title } = getNotePartsFromContent(content);
+    const notePath = await this.getAvailableRootNotePath(title);
+    await this.writeNote(notePath, body);
+    return { content: body, path: notePath };
   }
 
   async writeNote(notePath: string, content: string) {
@@ -128,7 +129,7 @@ export class NoteFileService {
 
     const filePath = this.resolveNoteFile(normalizedPath);
     await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, content, "utf8");
+    await writeFile(filePath, stripMatchingTitleLine(normalizedPath, content), "utf8");
 
     const meta = await this.readNoteMeta(filePath);
     if (!meta) return;
@@ -501,10 +502,27 @@ function createNoteMeta(notePath: string, mtimeMs: number, size: number): NoteMe
   };
 }
 
-function getNoteTitleFromContent(content: string) {
-  const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
-  const title = firstLine.replace(/^#{1,6}\s+/, "").trim();
-  return title || "Untitled";
+function getNotePartsFromContent(content: string) {
+  const match = content.match(/^(.*?)(\r?\n|$)([\s\S]*)$/);
+  const firstLine = match?.[1]?.trim() ?? "";
+  const body = match?.[3] ?? "";
+  const title = getTitleFromLine(firstLine);
+  return { body, title };
+}
+
+function stripMatchingTitleLine(notePath: string, content: string) {
+  const { body, title } = getNotePartsFromContent(content);
+  if (!title) return content;
+
+  return sanitizeRootNoteTitle(title) === getRootNoteTitle(notePath) ? body : content;
+}
+
+function getTitleFromLine(line: string) {
+  return line.replace(/^#{1,6}\s+/, "").trim();
+}
+
+function getRootNoteTitle(notePath: string) {
+  return notePath.split("/").at(-1) ?? notePath;
 }
 
 function sanitizeRootNoteTitle(title: string) {
