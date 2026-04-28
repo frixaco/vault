@@ -4,6 +4,8 @@ TODO:
 - [ ] Resize image like in Notion
 - [ ] Alignment rulers to move around images
 - [ ] Make attachment migration AST-aware so image syntax inside code blocks is not rewritten
+- [ ] File locking for external access by AI + explore in app AI integration
+- [ ] CMD+Z behavior
 
 ## Packages
 
