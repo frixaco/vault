@@ -27,7 +27,7 @@ import ReanimatedDrawerLayout, {
   type DrawerLayoutMethods,
 } from "react-native-gesture-handler/ReanimatedDrawerLayout";
 import { EnrichedMarkdownText, type MarkdownStyle } from "react-native-enriched-markdown";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   disposeVaultSearch,
@@ -74,6 +74,11 @@ type NoteTreeIndex = {
   allFolderPathSet: Set<string>;
   foldersByParent: Map<string, string[]>;
   notesByDirectory: Map<string, MobileNoteMeta[]>;
+};
+type MobileEditorTab = {
+  id: string;
+  path: string;
+  title: string;
 };
 type PreviewBlock =
   | {
@@ -123,8 +128,10 @@ const EmptySearchResponse: NoteSearchResponse = {
 
 const NotesPanelWidth = Math.min(Dimensions.get("window").width * 0.88, 380);
 const NotesOpenEdgeWidth = 48;
+const BottomTabBarHeight = 30;
 const SearchPaletteMaxHeight = Dimensions.get("window").height - 140;
 const SearchEase = Easing.bezier(0.2, 0, 0, 1);
+const TabSwitchEase = Easing.bezier(0.2, 0, 0, 1);
 const ImageMediaExtensions = new Set(["avif", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
 const VideoMediaExtensions = new Set(["m4v", "mov", "mp4", "ogv", "webm"]);
 const MaxCachedNoteContents = 12;
@@ -376,6 +383,59 @@ function rememberCachedNoteContent(cache: Map<string, string>, notePath: string,
   }
 }
 
+function createMobileEditorTab(note: MobileNoteMeta): MobileEditorTab {
+  return createMobileEditorTabFromPath(note.path, note.title);
+}
+
+function createMobileEditorTabFromPath(
+  path: string,
+  title = getPathBasename(path),
+): MobileEditorTab {
+  return {
+    id: `note:${path}`,
+    path,
+    title,
+  };
+}
+
+function ensureMobileEditorTab(
+  tabs: MobileEditorTab[],
+  notePath: string,
+  title = getPathBasename(notePath),
+) {
+  if (tabs.some((tab) => tab.path === notePath)) return tabs;
+  return [...tabs, createMobileEditorTabFromPath(notePath, title)];
+}
+
+function replaceMobileEditorTabPath(
+  tabs: MobileEditorTab[],
+  previousPath: string | null,
+  nextPath: string,
+  title = getPathBasename(nextPath),
+) {
+  if (!previousPath) return ensureMobileEditorTab(tabs, nextPath, title);
+
+  let replaced = false;
+  const nextTabs = tabs.map((tab) => {
+    if (tab.path !== previousPath) return tab;
+    replaced = true;
+    return createMobileEditorTabFromPath(nextPath, title);
+  });
+
+  return dedupeMobileEditorTabs(
+    replaced ? nextTabs : ensureMobileEditorTab(nextTabs, nextPath, title),
+  );
+}
+
+function dedupeMobileEditorTabs(tabs: MobileEditorTab[]) {
+  const seen = new Set<string>();
+  return tabs.filter((tab) => {
+    if (seen.has(tab.path)) return false;
+    seen.add(tab.path);
+    return true;
+  });
+}
+
 function createMarkdownStyle(theme: AppTheme): MarkdownStyle {
   return {
     paragraph: {
@@ -530,6 +590,7 @@ function createMarkdownStyle(theme: AppTheme): MarkdownStyle {
 
 export function MarkdownEditor() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const drawerRef = useRef<DrawerLayoutMethods>(null);
   const inputRef = useRef<TextInput>(null);
   const previewScrollRef = useRef<ScrollView>(null);
@@ -537,6 +598,8 @@ export function MarkdownEditor() {
   const searchOpacity = useRef(new Animated.Value(0)).current;
   const searchScale = useRef(new Animated.Value(0.97)).current;
   const searchTranslateY = useRef(new Animated.Value(-12)).current;
+  const tabSwitchProgress = useRef(new Animated.Value(1)).current;
+  const tabSwitchDirectionRef = useRef(1);
   const activeNotePathRef = useRef<string | null>(null);
   const noteContentCacheRef = useRef(new Map<string, string>());
   const savedMarkdownRef = useRef("");
@@ -553,15 +616,51 @@ export function MarkdownEditor() {
   const [searching, setSearching] = useState(false);
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [tabs, setTabs] = useState<MobileEditorTab[]>([]);
   const markdownStyle = useMemo(() => createMarkdownStyle(theme), [theme]);
   const previewBlocks = useMemo(
     () => createPreviewBlocks(activeNotePath, markdown),
     [activeNotePath, markdown],
   );
+  const bottomChromeHeight = BottomTabBarHeight + insets.bottom;
+  const activeTabIndex = useMemo(
+    () => tabs.findIndex((tab) => tab.path === activeNotePath),
+    [activeNotePath, tabs],
+  );
+  const editorSwitchStyle = {
+    opacity: tabSwitchProgress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.82, 1],
+    }),
+    transform: [
+      {
+        translateX: tabSwitchProgress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [tabSwitchDirectionRef.current * 18, 0],
+        }),
+      },
+    ],
+  };
 
   useEffect(() => {
     activeNotePathRef.current = activeNotePath;
   }, [activeNotePath]);
+
+  useEffect(() => {
+    const notesByPath = new Map(notes.map((note) => [note.path, note]));
+
+    setTabs((currentTabs) => {
+      let changed = false;
+      const nextTabs = currentTabs.map((tab) => {
+        const note = notesByPath.get(tab.path);
+        if (!note || note.title === tab.title) return tab;
+        changed = true;
+        return { ...tab, title: note.title };
+      });
+
+      return changed ? nextTabs : currentTabs;
+    });
+  }, [notes]);
 
   useEffect(() => {
     let active = true;
@@ -588,6 +687,7 @@ export function MarkdownEditor() {
 
         if (active) {
           setNotes(vault.notes);
+          setTabs(firstNote ? [createMobileEditorTab(firstNote)] : []);
           activeNotePathRef.current = firstNote?.path ?? null;
           setActiveNotePath(firstNote?.path ?? null);
           setMarkdown(firstNote ? `# ${firstNote.title}\n` : "");
@@ -651,6 +751,14 @@ export function MarkdownEditor() {
             noteContentCacheRef.current.delete(activeNotePath);
           }
           rememberCachedNoteContent(noteContentCacheRef.current, result.path, result.content);
+          setTabs((currentTabs) =>
+            replaceMobileEditorTabPath(
+              currentTabs,
+              activeNotePath,
+              result.path,
+              getPathBasename(result.path),
+            ),
+          );
           if (activeNotePathRef.current === activeNotePath) {
             activeNotePathRef.current = result.path;
             setActiveNotePath(result.path);
@@ -797,6 +905,10 @@ export function MarkdownEditor() {
   };
 
   const openNote = async (notePath: string) => {
+    const noteTitle =
+      notes.find((note) => note.path === notePath)?.title ?? getPathBasename(notePath);
+    setTabs((currentTabs) => ensureMobileEditorTab(currentTabs, notePath, noteTitle));
+
     if (notePath === activeNotePath) return;
 
     const previousNotePath = activeNotePath;
@@ -822,6 +934,14 @@ export function MarkdownEditor() {
           noteContentCacheRef.current.delete(previousNotePath);
         }
         rememberCachedNoteContent(noteContentCacheRef.current, savedNote.path, savedNote.content);
+        setTabs((currentTabs) =>
+          replaceMobileEditorTabPath(
+            currentTabs,
+            previousNotePath,
+            savedNote.path,
+            getPathBasename(savedNote.path),
+          ),
+        );
         if (activeNotePathRef.current === savedNote.path) {
           savedMarkdownRef.current = savedNote.content;
         }
@@ -851,6 +971,35 @@ export function MarkdownEditor() {
   const openSearchResult = (result: NoteSearchResult) => {
     void openNote(result.notePath);
     closeSearch();
+  };
+
+  const animateTabSwitch = (direction: number) => {
+    tabSwitchDirectionRef.current = direction;
+
+    if (reduceMotion) {
+      tabSwitchProgress.setValue(1);
+      return;
+    }
+
+    tabSwitchProgress.stopAnimation();
+    tabSwitchProgress.setValue(0);
+    Animated.timing(tabSwitchProgress, {
+      duration: 180,
+      easing: TabSwitchEase,
+      toValue: 1,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const switchToAdjacentTab = (direction: number) => {
+    if (activeTabIndex < 0) return;
+
+    const nextIndex = activeTabIndex + direction;
+    const nextTab = tabs[nextIndex];
+    if (!nextTab) return;
+
+    animateTabSwitch(direction);
+    void openNote(nextTab.path);
   };
 
   const swipeResponder = useMemo(() => {
@@ -898,7 +1047,10 @@ export function MarkdownEditor() {
   const isEditing = mode === "edit";
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+    <SafeAreaView
+      edges={["top", "left", "right"]}
+      style={[styles.safeArea, { backgroundColor: theme.background }]}
+    >
       <ReanimatedDrawerLayout
         ref={drawerRef}
         drawerBackgroundColor={theme.background}
@@ -930,59 +1082,67 @@ export function MarkdownEditor() {
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={styles.keyboardView}
           >
-            {isEditing ? (
-              <TextInput
-                ref={inputRef}
-                autoCapitalize="sentences"
-                cursorColor={theme.accent}
-                multiline
-                onChangeText={handleMarkdownChange}
-                placeholder="Start writing..."
-                placeholderTextColor={theme.textFaint}
-                scrollEnabled
-                selectionColor={theme.selection}
-                style={[styles.sourceInput, { color: theme.text }]}
-                textAlignVertical="top"
-                value={markdown}
-              />
-            ) : (
-              <ScrollView
-                ref={previewScrollRef}
-                contentContainerStyle={styles.previewContent}
-                keyboardShouldPersistTaps="handled"
-                style={styles.preview}
-              >
-                {hasPreviewContent(previewBlocks) ? (
-                  previewBlocks.map((block) =>
-                    block.kind === "markdown" ? (
-                      block.markdown.trim().length > 0 ? (
-                        <EnrichedMarkdownText
+            <Animated.View style={[styles.editorPane, editorSwitchStyle]}>
+              {isEditing ? (
+                <TextInput
+                  ref={inputRef}
+                  autoCapitalize="sentences"
+                  cursorColor={theme.accent}
+                  multiline
+                  onChangeText={handleMarkdownChange}
+                  placeholder="Start writing..."
+                  placeholderTextColor={theme.textFaint}
+                  scrollEnabled
+                  selectionColor={theme.selection}
+                  style={[
+                    styles.sourceInput,
+                    { color: theme.text, paddingBottom: bottomChromeHeight + 56 },
+                  ]}
+                  textAlignVertical="top"
+                  value={markdown}
+                />
+              ) : (
+                <ScrollView
+                  ref={previewScrollRef}
+                  contentContainerStyle={[
+                    styles.previewContent,
+                    { paddingBottom: bottomChromeHeight + 44 },
+                  ]}
+                  keyboardShouldPersistTaps="handled"
+                  style={styles.preview}
+                >
+                  {hasPreviewContent(previewBlocks) ? (
+                    previewBlocks.map((block) =>
+                      block.kind === "markdown" ? (
+                        block.markdown.trim().length > 0 ? (
+                          <EnrichedMarkdownText
+                            key={block.id}
+                            flavor="github"
+                            markdown={block.markdown}
+                            markdownStyle={markdownStyle}
+                            selectable
+                          />
+                        ) : null
+                      ) : (
+                        <PreviewMediaBlock
                           key={block.id}
-                          flavor="github"
-                          markdown={block.markdown}
-                          markdownStyle={markdownStyle}
-                          selectable
+                          media={block.media}
+                          theme={theme}
+                          onError={setSearchError}
                         />
-                      ) : null
-                    ) : (
-                      <PreviewMediaBlock
-                        key={block.id}
-                        media={block.media}
-                        theme={theme}
-                        onError={setSearchError}
-                      />
-                    ),
-                  )
-                ) : (
-                  <EnrichedMarkdownText
-                    flavor="github"
-                    markdown="Nothing to preview yet."
-                    markdownStyle={markdownStyle}
-                    selectable
-                  />
-                )}
-              </ScrollView>
-            )}
+                      ),
+                    )
+                  ) : (
+                    <EnrichedMarkdownText
+                      flavor="github"
+                      markdown="Nothing to preview yet."
+                      markdownStyle={markdownStyle}
+                      selectable
+                    />
+                  )}
+                </ScrollView>
+              )}
+            </Animated.View>
 
             <Pressable
               accessibilityLabel={isEditing ? "Preview note" : "Edit note"}
@@ -993,6 +1153,7 @@ export function MarkdownEditor() {
                 {
                   backgroundColor: theme.backgroundElement,
                   borderColor: theme.hairlineStrong,
+                  bottom: bottomChromeHeight + Spacing.two,
                   shadowColor: theme.text,
                 },
               ]}
@@ -1003,6 +1164,24 @@ export function MarkdownEditor() {
                 <EditIcon color={theme.textSecondary} accentColor={theme.accent} />
               )}
             </Pressable>
+
+            <BottomTabSwitcher
+              activeIndex={activeTabIndex}
+              activeNotePath={activeNotePath}
+              bottomInset={insets.bottom}
+              progress={tabSwitchProgress}
+              switchDirection={tabSwitchDirectionRef.current}
+              tabs={tabs}
+              theme={theme}
+              onOpenTab={(notePath) => {
+                const nextIndex = tabs.findIndex((tab) => tab.path === notePath);
+                if (nextIndex >= 0 && activeTabIndex >= 0) {
+                  animateTabSwitch(nextIndex > activeTabIndex ? 1 : -1);
+                }
+                void openNote(notePath);
+              }}
+              onSwipeTab={switchToAdjacentTab}
+            />
           </KeyboardAvoidingView>
 
           {searchOpen && (
@@ -1031,6 +1210,154 @@ export function MarkdownEditor() {
 
 function hasPreviewContent(blocks: PreviewBlock[]) {
   return blocks.some((block) => block.kind === "media" || block.markdown.trim().length > 0);
+}
+
+function BottomTabSwitcher({
+  activeIndex,
+  activeNotePath,
+  bottomInset,
+  onOpenTab,
+  onSwipeTab,
+  progress,
+  switchDirection,
+  tabs,
+  theme,
+}: {
+  activeIndex: number;
+  activeNotePath: string | null;
+  bottomInset: number;
+  onOpenTab: (notePath: string) => void;
+  onSwipeTab: (direction: number) => void;
+  progress: Animated.Value;
+  switchDirection: number;
+  tabs: MobileEditorTab[];
+  theme: AppTheme;
+}) {
+  const activeTab = activeIndex >= 0 ? tabs[activeIndex] : null;
+  const previousTab = activeIndex > 0 ? tabs[activeIndex - 1] : null;
+  const nextTab = activeIndex >= 0 ? tabs[activeIndex + 1] : null;
+  const swipeResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_event, gesture) =>
+          Math.abs(gesture.dx) > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
+        onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+          Math.abs(gesture.dx) > 12 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35,
+        onPanResponderRelease: (_event, gesture) => {
+          if (Math.abs(gesture.dx) < 44) return;
+          onSwipeTab(gesture.dx < 0 ? 1 : -1);
+        },
+      }),
+    [onSwipeTab],
+  );
+  const animatedStyle = {
+    opacity: progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.7, 1],
+    }),
+    transform: [
+      {
+        translateX: progress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [switchDirection * 28, 0],
+        }),
+      },
+    ],
+  };
+
+  if (!activeTab) return null;
+
+  return (
+    <View
+      pointerEvents="box-none"
+      style={[
+        styles.bottomTabArea,
+        {
+          backgroundColor: theme.background,
+          borderTopColor: theme.hairline,
+          height: BottomTabBarHeight + bottomInset,
+          paddingBottom: Math.max(bottomInset - 18, Spacing.two),
+        },
+      ]}
+    >
+      <Animated.View style={[styles.bottomTabSlots, animatedStyle]} {...swipeResponder.panHandlers}>
+        <BottomTabSlot
+          align="left"
+          disabled={!previousTab}
+          tab={previousTab}
+          theme={theme}
+          onPress={onOpenTab}
+        />
+        <BottomTabSlot
+          active
+          align="center"
+          disabled={activeTab.path === activeNotePath}
+          tab={activeTab}
+          theme={theme}
+          onPress={onOpenTab}
+        />
+        <BottomTabSlot
+          align="right"
+          disabled={!nextTab}
+          tab={nextTab}
+          theme={theme}
+          onPress={onOpenTab}
+        />
+      </Animated.View>
+    </View>
+  );
+}
+
+function BottomTabSlot({
+  active = false,
+  align,
+  disabled,
+  onPress,
+  tab,
+  theme,
+}: {
+  active?: boolean;
+  align: "center" | "left" | "right";
+  disabled: boolean;
+  onPress: (notePath: string) => void;
+  tab: MobileEditorTab | null;
+  theme: AppTheme;
+}) {
+  if (!tab) return <View style={styles.bottomTabSlot} />;
+
+  return (
+    <Pressable
+      accessibilityLabel={active ? `Current tab ${tab.title}` : `Open tab ${tab.title}`}
+      accessibilityRole="tab"
+      accessibilityState={{ disabled, selected: active }}
+      disabled={disabled}
+      onPress={() => onPress(tab.path)}
+      style={({ pressed }) => [
+        styles.bottomTabSlot,
+        align === "left" ? styles.bottomTabSlotLeft : null,
+        align === "right" ? styles.bottomTabSlotRight : null,
+        {
+          opacity: active ? 1 : 0.58,
+          transform: [{ scale: pressed ? 0.98 : 1 }],
+        },
+      ]}
+    >
+      <Text
+        numberOfLines={1}
+        style={[
+          active ? styles.bottomTabActiveText : styles.bottomTabSideText,
+          {
+            color: active ? theme.text : theme.textSecondary,
+          },
+        ]}
+      >
+        {tab.title}
+      </Text>
+      {active ? (
+        <View style={[styles.bottomTabIndicator, { backgroundColor: theme.accent }]} />
+      ) : null}
+    </Pressable>
+  );
 }
 
 function PreviewMediaBlock({
@@ -1716,6 +2043,9 @@ const styles = StyleSheet.create({
   },
   keyboardView: {
     flex: 1,
+  },
+  editorPane: {
+    flex: 1,
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.four,
   },
@@ -1907,14 +2237,12 @@ const styles = StyleSheet.create({
     lineHeight: 31,
     minHeight: 420,
     padding: 0,
-    paddingBottom: 96,
   },
   preview: {
     flex: 1,
   },
   previewContent: {
     gap: Spacing.three,
-    paddingBottom: 96,
   },
   previewMediaFrame: {
     borderRadius: 3,
@@ -1987,7 +2315,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderRadius: 3,
     borderWidth: 1,
-    bottom: Spacing.four,
     height: 44,
     justifyContent: "center",
     position: "absolute",
@@ -1999,6 +2326,60 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 10,
     width: 44,
+  },
+  bottomTabArea: {
+    alignItems: "center",
+    borderTopWidth: 1,
+    bottom: 0,
+    justifyContent: "center",
+    left: 0,
+    paddingHorizontal: Spacing.two,
+    position: "absolute",
+    right: 0,
+  },
+  bottomTabSlots: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: Spacing.two,
+    height: 30,
+    width: "100%",
+  },
+  bottomTabSlot: {
+    alignItems: "center",
+    flex: 1,
+    height: 30,
+    justifyContent: "center",
+    minWidth: 0,
+    paddingHorizontal: Spacing.two,
+  },
+  bottomTabSlotLeft: {
+    alignItems: "flex-start",
+  },
+  bottomTabSlotRight: {
+    alignItems: "flex-end",
+  },
+  bottomTabActiveText: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0,
+    lineHeight: 16,
+    maxWidth: "100%",
+  },
+  bottomTabSideText: {
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    letterSpacing: 0,
+    lineHeight: 15,
+    maxWidth: "100%",
+  },
+  bottomTabIndicator: {
+    borderRadius: 1,
+    bottom: 0,
+    height: 2,
+    left: Spacing.two,
+    position: "absolute",
+    right: Spacing.two,
   },
   editIconFrame: {
     borderWidth: 1.5,
