@@ -19,6 +19,8 @@ Clean, minimal, beautiful Obsidian killer. Best note-taking app.
   - `desktop/` - Electron desktop app.
   - `mobile/` - Expo mobile app.
   - `sync-api/` - sync API.
+- Shared Rust code lives at `crates/vault-shared/`.
+- `crates/vault-shared` is the single Rust crate reused by desktop, Android, and iOS.
 - Keep desktop app code and desktop release configuration inside `desktop/`.
 - Root scripts should only orchestrate workspace packages or repo-level tooling.
 
@@ -33,13 +35,31 @@ Clean, minimal, beautiful Obsidian killer. Best note-taking app.
 
 ## Workspace Scripts
 
+- `pnpm android` runs the Expo Android app via `@vault/mobile`.
+- `pnpm ios` runs the Expo iOS app via `@vault/mobile`.
+- `pnpm build-native` builds the shared Rust desktop binary.
+- `pnpm build-vault-shared` runs [scripts/build-vault-shared.mjs](scripts/build-vault-shared.mjs), which builds `crates/vault-shared` and stages the desktop `vault-shared` binary under `desktop/build/vault-shared/bin/`.
+- `pnpm build-desktop` builds the desktop app code and shared native binary, but does not create release artifacts.
 - `pnpm dev-desktop` starts the Electron app.
 - `pnpm dev-mobile` starts the Expo app.
 - `pnpm dev-sync-api` starts the sync API.
+- `pnpm dist-desktop-*` scripts package desktop release artifacts under `desktop/dist/`.
 - `pnpm fmt` checks formatting.
 - `pnpm fmt-fix` writes formatting fixes.
 - `pnpm lint` runs oxlint.
 - `pnpm typecheck` runs script and package typechecks.
+
+## Shared Rust And Native Modules
+
+- The shared Rust package is `vault-shared-ffi`.
+- The Rust library crate name is `vault_shared_ffi`.
+- The desktop binary name is `vault-shared`.
+- Do not reintroduce a separate `crates/files` crate or a Rust crate nested under `mobile/modules/vault-shared/rust`.
+- Android and iOS must build from `crates/vault-shared`.
+- Android packages `libvault_shared_ffi.so` through `mobile/modules/vault-shared/android/build.gradle`.
+- iOS links `libvault_shared_ffi.a` through `mobile/modules/vault-shared/ios/VaultShared.podspec`.
+- The Expo native module name is `VaultShared`.
+- Keep search-specific TypeScript API compatibility in `mobile/modules/vault-shared`, but add future shared native features to the shared module rather than creating one native binary per feature.
 
 ## Desktop Release Builds
 
@@ -47,6 +67,8 @@ Clean, minimal, beautiful Obsidian killer. Best note-taking app.
 - The desktop release scripts are defined in `desktop/package.json`.
 - Root desktop release scripts forward to `@vault/desktop`.
 - Mac release artifacts are written under `desktop/dist/`.
+- Desktop release builds run `pnpm build-vault-shared` first and package `desktop/build/vault-shared/bin/vault-shared` as an extra resource.
+- `pnpm build-desktop` is a build step only. It writes `desktop/dist-electron/`, `desktop/dist-renderer/`, and `desktop/build/vault-shared/bin/`, but does not create `.app`, `.dmg`, `.zip`, or installer artifacts.
 - Apple Silicon macOS release build:
 
 ```sh

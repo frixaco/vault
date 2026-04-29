@@ -1,8 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, protocol } from "electron";
-import { CachedTitleSearchProvider } from "./cached-title-search.js";
-import { FffNoteSearch } from "./fff-search.js";
 import { ExternalLinkPopupService } from "./link-popup-service.js";
 import { openTabMenu } from "./native-menu-service.js";
 import { wireNoteFileEvents } from "./note-event-broadcaster.js";
@@ -11,6 +9,7 @@ import { NoteFileService } from "./note-file-service.js";
 import { VaultMediaResolver } from "./media-resolver.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
 import { createVaultMediaProtocolHandler, registerVaultMediaScheme } from "./media-protocol.js";
+import { VaultSharedNoteSearch } from "./vault-shared-search.js";
 import { createMainWindow } from "./window-manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,8 +21,7 @@ const noteFiles = new NoteFileService({
   ignoredDirectoryNames: [".vault"],
   notesRoot,
 });
-const noteSearch = new FffNoteSearch(notesRoot, vaultDataRoot);
-const titleSearch = new CachedTitleSearchProvider(noteFiles);
+const noteSearch = new VaultSharedNoteSearch(notesRoot, vaultDataRoot);
 const linkPopupService = new ExternalLinkPopupService();
 const mediaResolver = new VaultMediaResolver({
   notesRoot,
@@ -59,7 +57,7 @@ app.whenReady().then(async () => {
   await noteFiles.start().catch((error: unknown) => {
     console.error("Unable to watch notes", error);
   });
-  registerNoteIpcHandlers({ contentSearch: noteSearch, noteFiles, titleSearch });
+  registerNoteIpcHandlers({ contentSearch: noteSearch, noteFiles, titleSearch: noteSearch });
   ipcMain.handle("attachments:migrate", migrateAttachments);
   ipcMain.handle("links:open-popup", openLinkPopup);
   ipcMain.handle("tabs:menu", (event, payload: { hasOthers: boolean; hasRight: boolean }) =>

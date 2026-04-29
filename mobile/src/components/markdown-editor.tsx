@@ -24,9 +24,12 @@ import { Directory, File, Paths } from "expo-file-system";
 import {
   disposeVaultSearch,
   initializeVaultSearch,
-  searchVaultFiles,
+  searchVaultNotes,
   waitForVaultSearchScan,
-  type SearchFile,
+  type ContentSearchResult,
+  type NoteSearchResponse,
+  type NoteSearchResult,
+  type TitleSearchResult,
 } from "../../modules/vault-shared";
 import { Colors, Fonts, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -40,6 +43,14 @@ type NoteListItem = {
   updated: string;
 };
 type SearchState = "idle" | "initializing" | "ready" | "error";
+
+const EmptySearchResponse: NoteSearchResponse = {
+  best: [],
+  content: [],
+  query: "",
+  scope: "all",
+  title: [],
+};
 
 const InitialMarkdown = `# Untitled note
 
@@ -258,7 +269,7 @@ export function MarkdownEditor() {
   const [reduceMotion, setReduceMotion] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchFile[]>([]);
+  const [searchResults, setSearchResults] = useState<NoteSearchResponse>(EmptySearchResponse);
   const [searching, setSearching] = useState(false);
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -316,7 +327,7 @@ export function MarkdownEditor() {
 
     const trimmedQuery = searchQuery.trim();
     if (!trimmedQuery) {
-      setSearchResults([]);
+      setSearchResults(EmptySearchResponse);
       setSearching(false);
       return;
     }
@@ -325,16 +336,16 @@ export function MarkdownEditor() {
     setSearching(true);
 
     const timeout = setTimeout(() => {
-      searchVaultFiles(trimmedQuery, 24)
+      searchVaultNotes(trimmedQuery, "all")
         .then((response) => {
           if (active) {
-            setSearchResults(response.items);
+            setSearchResults(response);
             setSearchError(null);
           }
         })
         .catch((error: unknown) => {
           if (active) {
-            setSearchResults([]);
+            setSearchResults(EmptySearchResponse);
             setSearchError(error instanceof Error ? error.message : String(error));
           }
         })
@@ -451,11 +462,11 @@ export function MarkdownEditor() {
     });
   };
 
-  const openSearchResult = (result: SearchFile) => {
-    const title = getNoteTitleFromPath(result.path);
+  const openSearchResult = (result: NoteSearchResult) => {
+    const title = result.title;
     const note = Notes.find((item) => item.title === title);
 
-    setMarkdown(note ? createSeedMarkdown(note) : `# ${title}\n\n${result.path}`);
+    setMarkdown(note ? createSeedMarkdown(note) : `# ${title}\n\n${result.notePath}`);
     setMode("preview");
     closeSearch();
   };
@@ -634,11 +645,11 @@ function SearchOverlay({
 }: {
   error: string | null;
   inputRef: React.RefObject<TextInput | null>;
-  nativeResults: SearchFile[];
+  nativeResults: NoteSearchResponse;
   notes: NoteListItem[];
   onChangeQuery: (query: string) => void;
   onClose: () => void;
-  onOpenResult: (result: SearchFile) => void;
+  onOpenResult: (result: NoteSearchResult) => void;
   opacity: Animated.Value;
   query: string;
   scale: Animated.Value;
@@ -648,9 +659,9 @@ function SearchOverlay({
   translateY: Animated.Value;
 }) {
   const showNativeResults = query.trim().length > 0;
-  const recentResults = notes.map(noteToSearchFile);
-  const results = showNativeResults ? nativeResults : recentResults;
-  const label = showNativeResults ? "Notes" : "Recent";
+  const titleResults = showNativeResults ? nativeResults.title : notes.map(noteToTitleResult);
+  const contentResults = showNativeResults ? nativeResults.content : [];
+  const hasResults = titleResults.length > 0 || contentResults.length > 0;
   const emptyText =
     searchState === "initializing"
       ? "Indexing notes"
@@ -693,36 +704,39 @@ function SearchOverlay({
         </View>
 
         <View style={styles.searchResultFrame}>
-          <Text style={[styles.searchSectionLabel, { color: theme.textFaint }]}>{label}</Text>
-          {results.length > 0 && !error ? (
+          {hasResults && !error ? (
             <ScrollView
               contentContainerStyle={styles.searchResultList}
               keyboardShouldPersistTaps="handled"
               style={styles.searchResultScroll}
             >
-              {results.map((result, index) => (
-                <Pressable
-                  key={result.path}
-                  onPress={() => onOpenResult(result)}
-                  style={({ pressed }) => [
-                    styles.searchResultRow,
-                    {
-                      backgroundColor: index === 0 ? theme.active : "transparent",
-                      transform: [{ scale: pressed ? 0.985 : 1 }],
-                    },
-                  ]}
-                >
-                  <Text numberOfLines={1} style={[styles.searchResultTitle, { color: theme.text }]}>
-                    {getNoteTitleFromPath(result.path)}
-                  </Text>
-                  <Text
-                    numberOfLines={1}
-                    style={[styles.searchResultMeta, { color: theme.textFaint }]}
-                  >
-                    {getSearchDirectory(result.path)}
-                  </Text>
-                </Pressable>
+              <SearchSectionLabel theme={theme}>
+                {showNativeResults ? "Notes" : "Recent"}
+              </SearchSectionLabel>
+              {titleResults.map((result, index) => (
+                <TitleSearchRow
+                  key={result.id}
+                  result={result}
+                  selected={index === 0}
+                  theme={theme}
+                  onOpen={() => onOpenResult(result)}
+                />
               ))}
+
+              {showNativeResults && (
+                <>
+                  <SearchSectionLabel theme={theme}>Note content</SearchSectionLabel>
+                  {contentResults.map((result, index) => (
+                    <ContentSearchRow
+                      key={result.id}
+                      result={result}
+                      selected={titleResults.length === 0 && index === 0}
+                      theme={theme}
+                      onOpen={() => onOpenResult(result)}
+                    />
+                  ))}
+                </>
+              )}
             </ScrollView>
           ) : (
             <Text
@@ -734,6 +748,78 @@ function SearchOverlay({
         </View>
       </Animated.View>
     </Animated.View>
+  );
+}
+
+function SearchSectionLabel({ children, theme }: { children: string; theme: AppTheme }) {
+  return <Text style={[styles.searchSectionLabel, { color: theme.textFaint }]}>{children}</Text>;
+}
+
+function TitleSearchRow({
+  onOpen,
+  result,
+  selected,
+  theme,
+}: {
+  onOpen: () => void;
+  result: TitleSearchResult;
+  selected: boolean;
+  theme: AppTheme;
+}) {
+  return (
+    <Pressable
+      onPress={onOpen}
+      style={({ pressed }) => [
+        styles.searchResultRow,
+        {
+          backgroundColor: selected ? theme.active : "transparent",
+          transform: [{ scale: pressed ? 0.985 : 1 }],
+        },
+      ]}
+    >
+      <Text numberOfLines={1} style={[styles.searchResultTitle, { color: theme.text }]}>
+        {result.title}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ContentSearchRow({
+  onOpen,
+  result,
+  selected,
+  theme,
+}: {
+  onOpen: () => void;
+  result: ContentSearchResult;
+  selected: boolean;
+  theme: AppTheme;
+}) {
+  const start = Math.max(0, Math.min(result.jump.matchStart, result.snippet.length));
+  const end = Math.max(start, Math.min(result.jump.matchEnd, result.snippet.length));
+
+  return (
+    <Pressable
+      onPress={onOpen}
+      style={({ pressed }) => [
+        styles.searchContentRow,
+        {
+          backgroundColor: selected ? theme.active : "transparent",
+          transform: [{ scale: pressed ? 0.985 : 1 }],
+        },
+      ]}
+    >
+      <Text numberOfLines={1} style={[styles.searchResultTitle, { color: theme.text }]}>
+        {result.title}
+      </Text>
+      <Text numberOfLines={2} style={[styles.searchSnippet, { color: theme.textFaint }]}>
+        {result.snippet.slice(0, start)}
+        <Text style={[styles.searchSnippetMatch, { color: theme.text }]}>
+          {result.snippet.slice(start, end)}
+        </Text>
+        {result.snippet.slice(end)}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -838,24 +924,17 @@ function sanitizeNoteFilename(value: string) {
   return value.replace(/[/:]/g, " ").trim();
 }
 
-function noteToSearchFile(note: NoteListItem): SearchFile {
+function noteToTitleResult(note: NoteListItem): TitleSearchResult {
+  const notePath = `${note.folder}/${note.title}`;
+
   return {
     directory: note.folder,
-    name: `${note.title}.md`,
-    path: `${note.folder}/${note.title}.md`,
-    score: 0,
+    exact: false,
+    id: `title:${notePath}`,
+    notePath,
+    title: note.title,
+    type: "title",
   };
-}
-
-function getNoteTitleFromPath(path: string) {
-  const filename = path.split("/").at(-1) ?? path;
-  return filename.endsWith(".md") ? filename.slice(0, -3) : filename;
-}
-
-function getSearchDirectory(path: string) {
-  const parts = path.split("/");
-  parts.pop();
-  return parts.join("/") || "Vault";
 }
 
 function EditIcon({ color, accentColor }: { color: string; accentColor: string }) {
@@ -995,16 +1074,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: 9,
   },
+  searchContentRow: {
+    borderRadius: 2,
+    gap: Spacing.half,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 9,
+  },
   searchResultTitle: {
     fontFamily: Fonts.mono,
     fontSize: 12,
     lineHeight: 16,
   },
-  searchResultMeta: {
+  searchSnippet: {
     fontFamily: Fonts.mono,
-    fontSize: 10,
-    lineHeight: 14,
-    marginTop: Spacing.half,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  searchSnippetMatch: {
+    fontFamily: Fonts.mono,
+    fontSize: 11,
+    lineHeight: 16,
   },
   searchEmptyText: {
     fontFamily: Fonts.mono,

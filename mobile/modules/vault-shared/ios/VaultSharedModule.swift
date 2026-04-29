@@ -22,6 +22,20 @@ private func vaultSharedSearchFilesJson(
   _ limit: UInt32
 ) -> UnsafeMutablePointer<CChar>?
 
+@_silgen_name("vault_shared_note_search_json")
+private func vaultSharedNoteSearchJson(
+  _ handle: UnsafeMutableRawPointer?,
+  _ query: UnsafePointer<CChar>,
+  _ scope: UnsafePointer<CChar>
+) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("vault_shared_search_track_selection_json")
+private func vaultSharedSearchTrackSelectionJson(
+  _ handle: UnsafeMutableRawPointer?,
+  _ query: UnsafePointer<CChar>,
+  _ notePath: UnsafePointer<CChar>
+) -> UnsafeMutablePointer<CChar>?
+
 @_silgen_name("vault_shared_free_string")
 private func vaultSharedFreeString(_ value: UnsafeMutablePointer<CChar>?)
 
@@ -73,6 +87,26 @@ public class VaultSharedModule: Module {
     AsyncFunction("searchFilesJson") { (query: String, limit: UInt32) in
       try query.withCString { queryPointer in
         try self.takeJson(vaultSharedSearchFilesJson(try self.requireHandle(), queryPointer, limit))
+      }
+    }
+
+    AsyncFunction("noteSearchJson") { (query: String, scope: String) in
+      try query.withCString { queryPointer in
+        try scope.withCString { scopePointer in
+          try self.takeJson(
+            vaultSharedNoteSearchJson(try self.requireHandle(), queryPointer, scopePointer)
+          )
+        }
+      }
+    }
+
+    AsyncFunction("searchTrackSelectionJson") { (query: String, notePath: String) in
+      try query.withCString { queryPointer in
+        try notePath.withCString { notePathPointer in
+          try self.takeJson(
+            vaultSharedSearchTrackSelectionJson(try self.requireHandle(), queryPointer, notePathPointer)
+          )
+        }
       }
     }
 

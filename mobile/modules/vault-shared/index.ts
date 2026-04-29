@@ -1,15 +1,23 @@
 import VaultSharedModule from "./src/VaultSharedModule";
 import type {
   NativeEnvelope,
+  NoteSearchResponse,
   SearchFilesResponse,
   SearchProgress,
+  SearchScope,
   VaultSearchInitOptions,
 } from "./src/VaultSearch.types";
 
 export type {
+  ContentSearchResult,
+  NoteSearchResponse,
+  NoteSearchResult,
   SearchFile,
   SearchFilesResponse,
+  SearchJump,
   SearchProgress,
+  SearchScope,
+  TitleSearchResult,
   VaultSearchInitOptions,
 } from "./src/VaultSearch.types";
 
@@ -40,6 +48,17 @@ export async function getVaultSearchProgress(): Promise<SearchProgress> {
 
 export async function searchVaultFiles(query: string, limit = 80): Promise<SearchFilesResponse> {
   return unwrapNativeJson(await VaultSharedModule.searchFilesJson(query, limit));
+}
+
+export async function searchVaultNotes(
+  query: string,
+  scope: SearchScope = "all",
+): Promise<NoteSearchResponse> {
+  return unwrapNativeJson(await VaultSharedModule.noteSearchJson(query, scope));
+}
+
+export async function trackVaultSearchSelection(query: string, notePath: string) {
+  return unwrapNativeJson(await VaultSharedModule.searchTrackSelectionJson(query, notePath));
 }
 
 const VaultSearchModule = VaultSharedModule;

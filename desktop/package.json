@@ -24,7 +24,6 @@
     "typecheck": "tsgo -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@ff-labs/fff-node": "^0.6.4",
     "@parcel/watcher": "2.5.6",
     "@pierre/trees": "1.0.0-beta.3",
     "@tiptap/markdown": "3.22.4",
@@ -74,6 +73,15 @@
         "filter": [
           "vault-shared",
           "vault-shared.exe"
+        ]
+      },
+      {
+        "from": "build/vault-shared/lib",
+        "to": "lib",
+        "filter": [
+          "libvault_shared_ffi.dylib",
+          "libvault_shared_ffi.so",
+          "vault_shared_ffi.dll"
         ]
       }
     ],

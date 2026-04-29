@@ -9,11 +9,18 @@ const srcDir = join(desktopDir, "src");
 const rendererDir = join(desktopDir, "dist-renderer");
 const electronDir = join(desktopDir, "dist-electron");
 const sharedBinaryName = process.platform === "win32" ? "vault-shared.exe" : "vault-shared";
+const sharedLibraryName =
+  process.platform === "win32"
+    ? "vault_shared_ffi.dll"
+    : process.platform === "darwin"
+      ? "libvault_shared_ffi.dylib"
+      : "libvault_shared_ffi.so";
 const sharedBinaryPath = join(desktopDir, "build", "vault-shared", "bin", sharedBinaryName);
+const sharedLibraryPath = join(desktopDir, "build", "vault-shared", "lib", sharedLibraryName);
 const assets = ["index.html"];
 
-if (!existsSync(sharedBinaryPath)) {
-  console.log("[dev] vault-shared binary not found, building rust crate once");
+if (!existsSync(sharedBinaryPath) || !existsSync(sharedLibraryPath)) {
+  console.log("[dev] vault-shared native artifacts not found, building rust crate once");
   const result = spawnSync("pnpm", ["--workspace-root", "build-vault-shared"], {
     cwd: repoRoot,
     stdio: "inherit",

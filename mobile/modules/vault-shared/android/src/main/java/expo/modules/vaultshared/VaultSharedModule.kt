@@ -32,6 +32,14 @@ class VaultSharedModule : Module() {
       nativeSearchFilesJson(requireHandle(), query, limit)
     }
 
+    AsyncFunction("noteSearchJson") { query: String, scope: String ->
+      nativeNoteSearchJson(requireHandle(), query, scope)
+    }
+
+    AsyncFunction("searchTrackSelectionJson") { query: String, notePath: String ->
+      nativeSearchTrackSelectionJson(requireHandle(), query, notePath)
+    }
+
     Function("dispose") {
       destroyHandle()
     }
@@ -57,6 +65,12 @@ class VaultSharedModule : Module() {
   private external fun nativeWaitForScan(handle: Long, timeoutMs: Long): Boolean
   private external fun nativeProgressJson(handle: Long): String
   private external fun nativeSearchFilesJson(handle: Long, query: String, limit: Long): String
+  private external fun nativeNoteSearchJson(handle: Long, query: String, scope: String): String
+  private external fun nativeSearchTrackSelectionJson(
+    handle: Long,
+    query: String,
+    notePath: String,
+  ): String
   private external fun nativeTakeLastError(): String
 
   companion object {
