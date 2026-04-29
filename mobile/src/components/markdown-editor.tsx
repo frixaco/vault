@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlashList, type ListRenderItem } from "@shopify/flash-list";
 import {
   AccessibilityInfo,
   Animated,
@@ -14,12 +15,16 @@ import {
   Text,
   TextInput,
   View,
-  type GestureResponderEvent,
   type PanResponderGestureState,
 } from "react-native";
+import ReanimatedDrawerLayout, {
+  DrawerKeyboardDismissMode,
+  DrawerPosition,
+  DrawerType,
+  type DrawerLayoutMethods,
+} from "react-native-gesture-handler/ReanimatedDrawerLayout";
 import { EnrichedMarkdownText, type MarkdownStyle } from "react-native-enriched-markdown";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Directory, File, Paths } from "expo-file-system";
 
 import {
   disposeVaultSearch,
@@ -33,14 +38,37 @@ import {
 } from "../../modules/vault-shared";
 import { Colors, Fonts, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
+import {
+  createMobileNote,
+  initializeMobileVault,
+  listMobileNotes,
+  readMobileNote,
+  resolveMobileMediaUri,
+  writeMobileNote,
+  type MobileNoteMeta,
+} from "@/services/note-file-service";
 
 type AppTheme = (typeof Colors)[keyof typeof Colors];
 type EditorMode = "edit" | "preview";
-type NoteListItem = {
-  title: string;
-  folder: string;
-  excerpt: string;
-  updated: string;
+type NoteTreeRow =
+  | {
+      depth: number;
+      id: string;
+      kind: "folder";
+      name: string;
+      path: string;
+    }
+  | {
+      depth: number;
+      id: string;
+      kind: "note";
+      name: string;
+      note: MobileNoteMeta;
+      path: string;
+    };
+type NoteTreeIndex = {
+  foldersByParent: Map<string, string[]>;
+  notesByDirectory: Map<string, MobileNoteMeta[]>;
 };
 type SearchState = "idle" | "initializing" | "ready" | "error";
 
@@ -52,56 +80,116 @@ const EmptySearchResponse: NoteSearchResponse = {
   title: [],
 };
 
-const InitialMarkdown = `# Untitled note
-
-Start writing. Use **bold**, _italic_, ~~strike~~, \`code\`, and [links](https://example.com).
-
-- [x] GitHub task lists
-- [ ] Tables and fenced code blocks
-
-> A quiet editor should make the text feel close.
-
-\`\`\`ts
-const note = "plain markdown";
-\`\`\`
-`;
-
-const Notes: NoteListItem[] = [
-  {
-    title: "Untitled note",
-    folder: "Drafts",
-    excerpt: "Start writing. Use bold, italic, strike, code, and links.",
-    updated: "Now",
-  },
-  {
-    title: "Back Pain Fix",
-    folder: "Health",
-    excerpt: "Elbow stack stretching, Mackenzie exercises, Feb update.",
-    updated: "Yesterday",
-  },
-  {
-    title: "Better portfolio website",
-    folder: "Projects",
-    excerpt: "Tighter case studies, fewer decorative sections, stronger proof.",
-    updated: "Mon",
-  },
-  {
-    title: "How to learn LLMs",
-    folder: "Clippings",
-    excerpt: "Roadmap from zero to fine-tuning and evaluation loops.",
-    updated: "Apr 22",
-  },
-  {
-    title: "Goals for 2026",
-    folder: "Personal",
-    excerpt: "Health, craft, focus, money, and the work that compounds.",
-    updated: "Apr 18",
-  },
-];
-
-const NotesPanelWidth = Dimensions.get("window").width;
+const NotesPanelWidth = Math.min(Dimensions.get("window").width * 0.88, 380);
+const NotesOpenEdgeWidth = 48;
 const SearchPaletteMaxHeight = Dimensions.get("window").height - 140;
 const SearchEase = Easing.bezier(0.2, 0, 0, 1);
+const ImageMediaExtensions = new Set(["avif", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
+const MaxCachedNoteContents = 12;
+
+function isBlankMarkdown(content: string) {
+  return (
+    content
+      .split(/\r?\n/)
+      .filter((line) => !/^#{1,6}\s*$/.test(line.trim()))
+      .join("\n")
+      .trim().length === 0
+  );
+}
+
+function createPreviewMarkdown(notePath: string | null, content: string) {
+  if (!notePath) return content;
+
+  return content
+    .replace(/!\[\[([^\]\n]+)\]\]/g, (raw, target: string) => {
+      const { label, mediaPath, rawTarget } = parseObsidianMediaTarget(target);
+      if (!isImageMediaPath(mediaPath)) return raw;
+
+      const uri = resolveMobileMediaUri(notePath, mediaPath);
+      if (!uri) return raw;
+
+      return `![${label || mediaPath}](${formatMarkdownLinkTarget(uri)} "${rawTarget}")`;
+    })
+    .replace(/!\[([^\]\n]*)\]\(([^\n)]+)\)/g, (raw, alt: string, rawTarget: string) => {
+      const { suffix, target } = parseMarkdownImageTarget(rawTarget);
+      if (!shouldResolveVaultMediaPath(target) || !isImageMediaPath(target)) return raw;
+
+      const uri = resolveMobileMediaUri(notePath, target);
+      if (!uri) return raw;
+
+      return `![${alt}](${formatMarkdownLinkTarget(uri)}${suffix})`;
+    });
+}
+
+function parseObsidianMediaTarget(target: string) {
+  const [mediaPath = "", ...labelParts] = target.split("|");
+
+  return {
+    label: labelParts.join("|").trim(),
+    mediaPath: mediaPath.trim(),
+    rawTarget: target.trim(),
+  };
+}
+
+function parseMarkdownImageTarget(rawTarget: string) {
+  const trimmedTarget = rawTarget.trim();
+
+  if (trimmedTarget.startsWith("<")) {
+    const endIndex = trimmedTarget.indexOf(">");
+    if (endIndex >= 0) {
+      return {
+        suffix: trimmedTarget.slice(endIndex + 1),
+        target: trimmedTarget.slice(1, endIndex),
+      };
+    }
+  }
+
+  const match = trimmedTarget.match(/^(.+?)(\s+(?:"[^"]*"|'[^']*'))\s*$/);
+  if (match) {
+    return {
+      suffix: match[2] ?? "",
+      target: match[1]?.trim() ?? "",
+    };
+  }
+
+  return {
+    suffix: "",
+    target: trimmedTarget,
+  };
+}
+
+function formatMarkdownLinkTarget(target: string) {
+  return /[\s()<>]/.test(target) ? `<${target}>` : target;
+}
+
+function shouldResolveVaultMediaPath(mediaPath: string) {
+  return mediaPath.length > 0 && !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(mediaPath);
+}
+
+function isImageMediaPath(mediaPath: string) {
+  const extension = mediaPath.split(/[?#]/, 1)[0]?.split(".").at(-1)?.toLowerCase() ?? "";
+  return ImageMediaExtensions.has(extension);
+}
+
+function getCachedNoteContent(cache: Map<string, string>, notePath: string) {
+  const content = cache.get(notePath);
+  if (content === undefined) return null;
+
+  cache.delete(notePath);
+  cache.set(notePath, content);
+  return content;
+}
+
+function rememberCachedNoteContent(cache: Map<string, string>, notePath: string, content: string) {
+  cache.delete(notePath);
+  cache.set(notePath, content);
+
+  while (cache.size > MaxCachedNoteContents) {
+    const oldestNotePath = cache.keys().next().value;
+    if (!oldestNotePath) return;
+    cache.delete(oldestNotePath);
+  }
+}
 
 function createMarkdownStyle(theme: AppTheme): MarkdownStyle {
   return {
@@ -257,14 +345,21 @@ function createMarkdownStyle(theme: AppTheme): MarkdownStyle {
 
 export function MarkdownEditor() {
   const theme = useTheme();
+  const drawerRef = useRef<DrawerLayoutMethods>(null);
   const inputRef = useRef<TextInput>(null);
+  const previewScrollRef = useRef<ScrollView>(null);
   const searchInputRef = useRef<TextInput>(null);
-  const notesTranslateX = useRef(new Animated.Value(-NotesPanelWidth)).current;
   const searchOpacity = useRef(new Animated.Value(0)).current;
   const searchScale = useRef(new Animated.Value(0.97)).current;
   const searchTranslateY = useRef(new Animated.Value(-12)).current;
-  const [markdown, setMarkdown] = useState(InitialMarkdown);
+  const activeNotePathRef = useRef<string | null>(null);
+  const noteContentCacheRef = useRef(new Map<string, string>());
+  const savedMarkdownRef = useRef("");
+  const saveGenerationRef = useRef(0);
+  const [activeNotePath, setActiveNotePath] = useState<string | null>(null);
+  const [markdown, setMarkdown] = useState("");
   const [mode, setMode] = useState<EditorMode>("preview");
+  const [notes, setNotes] = useState<MobileNoteMeta[]>([]);
   const [notesOpen, setNotesOpen] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -274,6 +369,14 @@ export function MarkdownEditor() {
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [searchError, setSearchError] = useState<string | null>(null);
   const markdownStyle = useMemo(() => createMarkdownStyle(theme), [theme]);
+  const previewMarkdown = useMemo(
+    () => createPreviewMarkdown(activeNotePath, markdown),
+    [activeNotePath, markdown],
+  );
+
+  useEffect(() => {
+    activeNotePathRef.current = activeNotePath;
+  }, [activeNotePath]);
 
   useEffect(() => {
     let active = true;
@@ -291,14 +394,34 @@ export function MarkdownEditor() {
   useEffect(() => {
     let active = true;
 
-    async function initializeSearch() {
+    async function initializeVaultAndSearch() {
       setSearchState("initializing");
 
       try {
-        const { dataPath, notesPath } = seedSearchNotes();
+        const vault = await initializeMobileVault();
+        const firstNote = vault.notes[0] ?? null;
+
+        if (active) {
+          setNotes(vault.notes);
+          activeNotePathRef.current = firstNote?.path ?? null;
+          setActiveNotePath(firstNote?.path ?? null);
+          setMarkdown(firstNote ? `# ${firstNote.title}\n` : "");
+          savedMarkdownRef.current = firstNote ? `# ${firstNote.title}\n` : "";
+        }
+
+        if (firstNote) {
+          const initialMarkdown = await readMobileNote(firstNote.path);
+          rememberCachedNoteContent(noteContentCacheRef.current, firstNote.path, initialMarkdown);
+
+          if (active && activeNotePathRef.current === firstNote.path) {
+            setMarkdown(initialMarkdown);
+            savedMarkdownRef.current = initialMarkdown;
+          }
+        }
+
         await initializeVaultSearch({
-          basePath: notesPath,
-          dataPath,
+          basePath: vault.notesPath,
+          dataPath: vault.dataPath,
         });
         await waitForVaultSearchScan(1000);
 
@@ -314,13 +437,60 @@ export function MarkdownEditor() {
       }
     }
 
-    initializeSearch();
+    initializeVaultAndSearch();
 
     return () => {
       active = false;
       disposeVaultSearch();
     };
   }, []);
+
+  useEffect(() => {
+    if (markdown === savedMarkdownRef.current) return;
+    if (!activeNotePath && isBlankMarkdown(markdown)) return;
+
+    const generation = saveGenerationRef.current + 1;
+    saveGenerationRef.current = generation;
+
+    const timeout = setTimeout(() => {
+      const saveNote = activeNotePath
+        ? writeMobileNote(activeNotePath, markdown)
+        : createMobileNote(markdown);
+
+      saveNote
+        .then(async (result) => {
+          if (saveGenerationRef.current !== generation) return;
+
+          savedMarkdownRef.current = result.content;
+          if (activeNotePath && activeNotePath !== result.path) {
+            noteContentCacheRef.current.delete(activeNotePath);
+          }
+          rememberCachedNoteContent(noteContentCacheRef.current, result.path, result.content);
+          if (activeNotePathRef.current === activeNotePath) {
+            activeNotePathRef.current = result.path;
+            setActiveNotePath(result.path);
+            if (result.content !== markdown) setMarkdown(result.content);
+          }
+
+          const nextNotes = await listMobileNotes();
+          setNotes(nextNotes);
+          await waitForVaultSearchScan(250);
+        })
+        .catch((error: unknown) => {
+          setSearchError(error instanceof Error ? error.message : String(error));
+        });
+    }, 400);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [activeNotePath, markdown]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      previewScrollRef.current?.scrollTo({ animated: false, y: 0 });
+    });
+  }, [activeNotePath]);
 
   useEffect(() => {
     if (!searchOpen || searchState !== "ready") return;
@@ -360,29 +530,8 @@ export function MarkdownEditor() {
     };
   }, [searchOpen, searchQuery, searchState]);
 
-  const openNotes = () => {
-    Keyboard.dismiss();
-    if (searchOpen) {
-      closeSearch();
-    }
-    setNotesOpen(true);
-    Animated.timing(notesTranslateX, {
-      duration: 180,
-      toValue: 0,
-      useNativeDriver: true,
-    }).start();
-  };
-
   const closeNotes = () => {
-    Animated.timing(notesTranslateX, {
-      duration: 150,
-      toValue: -NotesPanelWidth,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
-        setNotesOpen(false);
-      }
-    });
+    drawerRef.current?.closeDrawer();
   };
 
   const openSearch = () => {
@@ -462,47 +611,78 @@ export function MarkdownEditor() {
     });
   };
 
-  const openSearchResult = (result: NoteSearchResult) => {
-    const title = result.title;
-    const note = Notes.find((item) => item.title === title);
+  const openNote = async (notePath: string) => {
+    if (notePath === activeNotePath) return;
 
-    setMarkdown(note ? createSeedMarkdown(note) : `# ${title}\n\n${result.notePath}`);
+    const previousNotePath = activeNotePath;
+    const previousMarkdown = markdown;
+    const previousSavedMarkdown = savedMarkdownRef.current;
+    const cachedMarkdown = getCachedNoteContent(noteContentCacheRef.current, notePath);
+    const optimisticMarkdown = cachedMarkdown ?? `# ${getPathBasename(notePath)}\n`;
+
+    saveGenerationRef.current += 1;
+    activeNotePathRef.current = notePath;
+    setActiveNotePath(notePath);
+    setMarkdown(optimisticMarkdown);
+    savedMarkdownRef.current = optimisticMarkdown;
     setMode("preview");
+    setSearchError(null);
+
+    try {
+      const nextContentPromise = cachedMarkdown ? null : readMobileNote(notePath);
+
+      if (previousNotePath && previousMarkdown !== previousSavedMarkdown) {
+        const savedNote = await writeMobileNote(previousNotePath, previousMarkdown);
+        if (previousNotePath !== savedNote.path) {
+          noteContentCacheRef.current.delete(previousNotePath);
+        }
+        rememberCachedNoteContent(noteContentCacheRef.current, savedNote.path, savedNote.content);
+        if (activeNotePathRef.current === savedNote.path) {
+          savedMarkdownRef.current = savedNote.content;
+        }
+
+        void listMobileNotes()
+          .then((nextNotes) => {
+            setNotes(nextNotes);
+          })
+          .catch((error: unknown) => {
+            setSearchError(error instanceof Error ? error.message : String(error));
+          });
+      }
+
+      if (nextContentPromise) {
+        const content = await nextContentPromise;
+        rememberCachedNoteContent(noteContentCacheRef.current, notePath, content);
+        if (activeNotePathRef.current === notePath) {
+          setMarkdown(content);
+          savedMarkdownRef.current = content;
+        }
+      }
+    } catch (error) {
+      setSearchError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const openSearchResult = (result: NoteSearchResult) => {
+    void openNote(result.notePath);
     closeSearch();
   };
 
   const swipeResponder = useMemo(() => {
-    function shouldHandlePan(
-      { nativeEvent }: GestureResponderEvent,
-      gesture: PanResponderGestureState,
-    ) {
-      const horizontalSwipe =
-        Math.abs(gesture.dx) > 16 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4;
+    function shouldHandlePan(_event: unknown, gesture: PanResponderGestureState) {
       const verticalSwipe =
         Math.abs(gesture.dy) > 18 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.4;
-      const openingFromEdge = !notesOpen && nativeEvent.pageX < 32 && gesture.dx > 0;
-      const closingPanel = notesOpen && gesture.dx < 0;
       const startedNearTop = gesture.y0 < 128;
       const openingSearch = !searchOpen && !notesOpen && startedNearTop && gesture.dy > 0;
       const closingSearch = searchOpen && gesture.y0 < 260 && gesture.dy < 0;
 
-      return (
-        (horizontalSwipe && (openingFromEdge || closingPanel)) ||
-        (verticalSwipe && (openingSearch || closingSearch))
-      );
+      return verticalSwipe && (openingSearch || closingSearch);
     }
 
     return PanResponder.create({
       onMoveShouldSetPanResponder: shouldHandlePan,
       onMoveShouldSetPanResponderCapture: shouldHandlePan,
       onPanResponderRelease: (_event, gesture) => {
-        if (!notesOpen && gesture.dx > 56) {
-          Keyboard.dismiss();
-          openNotes();
-        }
-        if (notesOpen && gesture.dx < -48) {
-          closeNotes();
-        }
         if (!searchOpen && !notesOpen && gesture.dy > 56) {
           openSearch();
         }
@@ -523,106 +703,122 @@ export function MarkdownEditor() {
     setMode("preview");
   };
 
+  const handleMarkdownChange = (content: string) => {
+    setMarkdown(content);
+    if (activeNotePathRef.current) {
+      rememberCachedNoteContent(noteContentCacheRef.current, activeNotePathRef.current, content);
+    }
+  };
+
   const isEditing = mode === "edit";
 
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: theme.background }]}
-      {...swipeResponder.panHandlers}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.keyboardView}
-      >
-        {isEditing ? (
-          <TextInput
-            ref={inputRef}
-            autoCapitalize="sentences"
-            cursorColor={theme.accent}
-            multiline
-            onChangeText={setMarkdown}
-            placeholder="Start writing..."
-            placeholderTextColor={theme.textFaint}
-            scrollEnabled
-            selectionColor={theme.selection}
-            style={[styles.sourceInput, { color: theme.text }]}
-            textAlignVertical="top"
-            value={markdown}
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      <ReanimatedDrawerLayout
+        ref={drawerRef}
+        drawerBackgroundColor={theme.background}
+        drawerPosition={DrawerPosition.LEFT}
+        drawerType={DrawerType.FRONT}
+        drawerWidth={NotesPanelWidth}
+        edgeWidth={NotesOpenEdgeWidth}
+        keyboardDismissMode={DrawerKeyboardDismissMode.ON_DRAG}
+        minSwipeDistance={8}
+        onDrawerClose={() => setNotesOpen(false)}
+        onDrawerOpen={() => setNotesOpen(true)}
+        overlayColor="rgba(0, 0, 0, 0.18)"
+        contentContainerStyle={styles.drawerLayout}
+        renderNavigationView={() => (
+          <NotesPanel
+            activeNotePath={activeNotePath}
+            notes={notes}
+            onClose={closeNotes}
+            onOpenNote={(notePath) => {
+              void openNote(notePath);
+              closeNotes();
+            }}
+            theme={theme}
           />
-        ) : (
-          <ScrollView
-            contentContainerStyle={styles.previewContent}
-            keyboardShouldPersistTaps="handled"
-            style={styles.preview}
-          >
-            <EnrichedMarkdownText
-              flavor="github"
-              markdown={markdown.trim().length > 0 ? markdown : "Nothing to preview yet."}
-              markdownStyle={markdownStyle}
-              selectable
-            />
-          </ScrollView>
         )}
-
-        <Pressable
-          accessibilityLabel={isEditing ? "Preview note" : "Edit note"}
-          accessibilityRole="button"
-          onPress={isEditing ? enterPreviewMode : enterEditMode}
-          style={[
-            styles.modeButton,
-            {
-              backgroundColor: theme.backgroundElement,
-              borderColor: theme.hairlineStrong,
-              shadowColor: theme.text,
-            },
-          ]}
-        >
-          {isEditing ? (
-            <PreviewIcon color={theme.textSecondary} accentColor={theme.accent} />
-          ) : (
-            <EditIcon color={theme.textSecondary} accentColor={theme.accent} />
-          )}
-        </Pressable>
-      </KeyboardAvoidingView>
-
-      {notesOpen && (
-        <View style={styles.notesOverlay}>
-          <Pressable
-            accessibilityLabel="Close notes"
-            onPress={closeNotes}
-            style={styles.notesScrim}
-          />
-          <Animated.View
-            style={[
-              styles.notesAnimatedPanel,
-              {
-                transform: [{ translateX: notesTranslateX }],
-              },
-            ]}
+      >
+        <View style={styles.contentHost} {...swipeResponder.panHandlers}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={styles.keyboardView}
           >
-            <NotesPanel notes={Notes} onClose={closeNotes} theme={theme} />
-          </Animated.View>
-        </View>
-      )}
+            {isEditing ? (
+              <TextInput
+                ref={inputRef}
+                autoCapitalize="sentences"
+                cursorColor={theme.accent}
+                multiline
+                onChangeText={handleMarkdownChange}
+                placeholder="Start writing..."
+                placeholderTextColor={theme.textFaint}
+                scrollEnabled
+                selectionColor={theme.selection}
+                style={[styles.sourceInput, { color: theme.text }]}
+                textAlignVertical="top"
+                value={markdown}
+              />
+            ) : (
+              <ScrollView
+                ref={previewScrollRef}
+                contentContainerStyle={styles.previewContent}
+                keyboardShouldPersistTaps="handled"
+                style={styles.preview}
+              >
+                <EnrichedMarkdownText
+                  flavor="github"
+                  markdown={
+                    previewMarkdown.trim().length > 0 ? previewMarkdown : "Nothing to preview yet."
+                  }
+                  markdownStyle={markdownStyle}
+                  selectable
+                />
+              </ScrollView>
+            )}
 
-      {searchOpen && (
-        <SearchOverlay
-          error={searchError}
-          inputRef={searchInputRef}
-          nativeResults={searchResults}
-          notes={Notes}
-          onChangeQuery={setSearchQuery}
-          onClose={closeSearch}
-          onOpenResult={openSearchResult}
-          opacity={searchOpacity}
-          query={searchQuery}
-          scale={searchScale}
-          searchState={searchState}
-          searching={searching}
-          theme={theme}
-          translateY={searchTranslateY}
-        />
-      )}
+            <Pressable
+              accessibilityLabel={isEditing ? "Preview note" : "Edit note"}
+              accessibilityRole="button"
+              onPress={isEditing ? enterPreviewMode : enterEditMode}
+              style={[
+                styles.modeButton,
+                {
+                  backgroundColor: theme.backgroundElement,
+                  borderColor: theme.hairlineStrong,
+                  shadowColor: theme.text,
+                },
+              ]}
+            >
+              {isEditing ? (
+                <PreviewIcon color={theme.textSecondary} accentColor={theme.accent} />
+              ) : (
+                <EditIcon color={theme.textSecondary} accentColor={theme.accent} />
+              )}
+            </Pressable>
+          </KeyboardAvoidingView>
+
+          {searchOpen && (
+            <SearchOverlay
+              error={searchError}
+              inputRef={searchInputRef}
+              nativeResults={searchResults}
+              notes={notes}
+              onChangeQuery={setSearchQuery}
+              onClose={closeSearch}
+              onOpenResult={openSearchResult}
+              opacity={searchOpacity}
+              query={searchQuery}
+              scale={searchScale}
+              searchState={searchState}
+              searching={searching}
+              theme={theme}
+              translateY={searchTranslateY}
+            />
+          )}
+        </View>
+      </ReanimatedDrawerLayout>
     </SafeAreaView>
   );
 }
@@ -646,7 +842,7 @@ function SearchOverlay({
   error: string | null;
   inputRef: React.RefObject<TextInput | null>;
   nativeResults: NoteSearchResponse;
-  notes: NoteListItem[];
+  notes: MobileNoteMeta[];
   onChangeQuery: (query: string) => void;
   onClose: () => void;
   onOpenResult: (result: NoteSearchResult) => void;
@@ -824,14 +1020,71 @@ function ContentSearchRow({
 }
 
 function NotesPanel({
+  activeNotePath,
   notes,
   onClose,
+  onOpenNote,
   theme,
 }: {
-  notes: NoteListItem[];
+  activeNotePath: string | null;
+  notes: MobileNoteMeta[];
   onClose: () => void;
+  onOpenNote: (notePath: string) => void;
   theme: AppTheme;
 }) {
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
+  const activeAncestors = useMemo(
+    () => getAncestorDirectories(activeNotePath ?? ""),
+    [activeNotePath],
+  );
+  const treeIndex = useMemo(() => createNoteTreeIndex(notes), [notes]);
+  const rows = useMemo(
+    () => createNoteTreeRows(treeIndex, collapsedFolders),
+    [collapsedFolders, treeIndex],
+  );
+  const listExtraData = useMemo(
+    () => ({ activeNotePath, collapsedFolders, theme }),
+    [activeNotePath, collapsedFolders, theme],
+  );
+
+  useEffect(() => {
+    if (activeAncestors.length === 0) return;
+
+    setCollapsedFolders((current) => {
+      let changed = false;
+      const next = new Set(current);
+      for (const folder of activeAncestors) {
+        if (next.delete(folder)) changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [activeAncestors]);
+
+  const toggleFolder = useCallback((folderPath: string) => {
+    setCollapsedFolders((current) => {
+      const next = new Set(current);
+      if (next.has(folderPath)) {
+        next.delete(folderPath);
+      } else {
+        next.add(folderPath);
+      }
+      return next;
+    });
+  }, []);
+  const renderTreeRow = useCallback<ListRenderItem<NoteTreeRow>>(
+    ({ item: row }) => (
+      <NoteTreeRow
+        active={row.kind === "note" && row.path === activeNotePath}
+        collapsed={row.kind === "folder" && collapsedFolders.has(row.path)}
+        row={row}
+        theme={theme}
+        onOpenNote={onOpenNote}
+        onToggleFolder={toggleFolder}
+      />
+    ),
+    [activeNotePath, collapsedFolders, onOpenNote, theme, toggleFolder],
+  );
+
   return (
     <View
       style={[
@@ -854,84 +1107,201 @@ function NotesPanel({
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.notesList}>
-        {notes.map((note, index) => (
-          <Pressable
-            key={note.title}
-            onPress={onClose}
-            style={[
-              styles.noteRow,
-              {
-                backgroundColor: index === 0 ? theme.active : theme.background,
-                borderBottomColor: theme.hairline,
-              },
-            ]}
-          >
-            <View style={styles.noteRowTop}>
-              <Text numberOfLines={1} style={[styles.noteTitle, { color: theme.text }]}>
-                {note.title}
-              </Text>
-              <Text style={[styles.noteDate, { color: theme.textFaint }]}>{note.updated}</Text>
-            </View>
-            <Text style={[styles.noteFolder, { color: theme.accent }]}>{note.folder}</Text>
-            <Text numberOfLines={2} style={[styles.noteExcerpt, { color: theme.textSecondary }]}>
-              {note.excerpt}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      <FlashList
+        contentContainerStyle={styles.notesList}
+        data={rows}
+        extraData={listExtraData}
+        getItemType={(row) => row.kind}
+        keyExtractor={(row) => row.id}
+        renderItem={renderTreeRow}
+        style={styles.notesTree}
+      />
     </View>
   );
 }
 
-function seedSearchNotes() {
-  const notesDirectory = new Directory(Paths.document, "VaultNotes");
-  const dataDirectory = new Directory(Paths.document, ".VaultSearch");
+const NoteTreeRow = React.memo(function NoteTreeRow({
+  active,
+  collapsed,
+  onOpenNote,
+  onToggleFolder,
+  row,
+  theme,
+}: {
+  active: boolean;
+  collapsed: boolean;
+  onOpenNote: (notePath: string) => void;
+  onToggleFolder: (folderPath: string) => void;
+  row: NoteTreeRow;
+  theme: AppTheme;
+}) {
+  const rowColor = row.kind === "folder" ? theme.textSecondary : theme.text;
+  const leftPadding = Spacing.three + row.depth * Spacing.three;
 
-  notesDirectory.create({ idempotent: true, intermediates: true });
-  dataDirectory.create({ idempotent: true, intermediates: true });
+  if (row.kind === "folder") {
+    return (
+      <Pressable
+        accessibilityLabel={`${collapsed ? "Expand" : "Collapse"} ${row.name}`}
+        accessibilityRole="button"
+        onPress={() => onToggleFolder(row.path)}
+        style={[
+          styles.treeRow,
+          {
+            backgroundColor: theme.background,
+            borderBottomColor: theme.hairline,
+            paddingLeft: leftPadding,
+          },
+        ]}
+      >
+        <View style={styles.folderGlyph}>
+          <View style={[styles.folderGlyphTop, { backgroundColor: theme.textFaint }]} />
+          <View style={[styles.folderGlyphBody, { borderColor: theme.textFaint }]} />
+        </View>
+        <Text numberOfLines={1} style={[styles.treeFolderText, { color: rowColor }]}>
+          {row.name}
+        </Text>
+        <Text style={[styles.treeDisclosure, { color: theme.textFaint }]}>
+          {collapsed ? "+" : "-"}
+        </Text>
+      </Pressable>
+    );
+  }
 
-  for (const note of Notes) {
-    const folder = new Directory(notesDirectory, note.folder);
-    folder.create({ idempotent: true, intermediates: true });
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => onOpenNote(row.path)}
+      style={[
+        styles.treeRow,
+        {
+          backgroundColor: active ? theme.active : theme.background,
+          borderBottomColor: theme.hairline,
+          paddingLeft: leftPadding,
+        },
+      ]}
+    >
+      <View style={[styles.noteGlyph, { borderColor: active ? theme.accent : theme.textFaint }]} />
+      <Text numberOfLines={1} style={[styles.treeNoteText, { color: rowColor }]}>
+        {row.name}
+      </Text>
+    </Pressable>
+  );
+});
 
-    const file = new File(folder, `${sanitizeNoteFilename(note.title)}.md`);
-    file.create({ intermediates: true, overwrite: true });
-    file.write(createSeedMarkdown(note));
+function createNoteTreeIndex(notes: MobileNoteMeta[]): NoteTreeIndex {
+  const foldersByParent = new Map<string, Set<string>>();
+  const notesByDirectory = new Map<string, MobileNoteMeta[]>();
+
+  for (const note of notes) {
+    const directory = normalizeTreePath(note.directory);
+    const segments = directory ? directory.split("/") : [];
+    let parentPath = "";
+
+    for (const segment of segments) {
+      const folderPath = joinVaultPath(parentPath, segment);
+      const childFolders = foldersByParent.get(parentPath) ?? new Set<string>();
+      childFolders.add(folderPath);
+      foldersByParent.set(parentPath, childFolders);
+      parentPath = folderPath;
+    }
+
+    const directoryNotes = notesByDirectory.get(directory) ?? [];
+    directoryNotes.push(note);
+    notesByDirectory.set(directory, directoryNotes);
   }
 
   return {
-    dataPath: toNativePath(dataDirectory.uri),
-    notesPath: toNativePath(notesDirectory.uri),
+    foldersByParent: new Map(
+      [...foldersByParent.entries()].map(([directoryPath, folders]) => [
+        directoryPath,
+        [...folders].sort(comparePathBasename),
+      ]),
+    ),
+    notesByDirectory: new Map(
+      [...notesByDirectory.entries()].map(([directoryPath, directoryNotes]) => [
+        directoryPath,
+        [...directoryNotes].sort(compareNotes),
+      ]),
+    ),
   };
 }
 
-function createSeedMarkdown(note: NoteListItem) {
-  return `# ${note.title}
+function createNoteTreeRows(treeIndex: NoteTreeIndex, collapsedFolders: Set<string>) {
+  const rows: NoteTreeRow[] = [];
 
-${note.excerpt}
+  function appendDirectory(directoryPath: string, depth: number) {
+    const folders = treeIndex.foldersByParent.get(directoryPath) ?? [];
+    for (const folderPath of folders) {
+      rows.push({
+        depth,
+        id: `folder:${folderPath}`,
+        kind: "folder",
+        name: getPathBasename(folderPath),
+        path: folderPath,
+      });
 
-Folder: ${note.folder}
-Updated: ${note.updated}
-`;
+      if (!collapsedFolders.has(folderPath)) {
+        appendDirectory(folderPath, depth + 1);
+      }
+    }
+
+    const directoryNotes = treeIndex.notesByDirectory.get(directoryPath) ?? [];
+    for (const note of directoryNotes) {
+      rows.push({
+        depth,
+        id: `note:${note.path}`,
+        kind: "note",
+        name: note.title,
+        note,
+        path: note.path,
+      });
+    }
+  }
+
+  appendDirectory("", 0);
+  return rows;
 }
 
-function toNativePath(uri: string) {
-  return decodeURI(uri.replace(/^file:\/\//, ""));
+function getAncestorDirectories(notePath: string) {
+  const segments = normalizeTreePath(notePath).split("/").filter(Boolean).slice(0, -1);
+  const ancestors: string[] = [];
+
+  for (const segment of segments) {
+    ancestors.push(joinVaultPath(ancestors.at(-1) ?? "", segment));
+  }
+
+  return ancestors;
 }
 
-function sanitizeNoteFilename(value: string) {
-  return value.replace(/[/:]/g, " ").trim();
+function compareNotes(left: MobileNoteMeta, right: MobileNoteMeta) {
+  return left.title.localeCompare(right.title) || left.path.localeCompare(right.path);
 }
 
-function noteToTitleResult(note: NoteListItem): TitleSearchResult {
-  const notePath = `${note.folder}/${note.title}`;
+function comparePathBasename(left: string, right: string) {
+  return getPathBasename(left).localeCompare(getPathBasename(right)) || left.localeCompare(right);
+}
 
+function getPathBasename(path: string) {
+  return path.split("/").at(-1) ?? path;
+}
+
+function normalizeTreePath(path: string) {
+  return path
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .join("/");
+}
+
+function joinVaultPath(...segments: string[]) {
+  return segments.filter(Boolean).join("/");
+}
+
+function noteToTitleResult(note: MobileNoteMeta): TitleSearchResult {
   return {
-    directory: note.folder,
+    directory: note.directory,
     exact: false,
-    id: `title:${notePath}`,
-    notePath,
+    id: `title:${note.path}`,
+    notePath: note.path,
     title: note.title,
     type: "title",
   };
@@ -986,23 +1356,20 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  contentHost: {
+    flex: 1,
+  },
+  drawerLayout: {
+    flex: 1,
+  },
   keyboardView: {
     flex: 1,
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.four,
   },
-  notesOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: "row",
-  },
-  notesScrim: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  notesAnimatedPanel: {
-    ...StyleSheet.absoluteFillObject,
-  },
   notesPanel: {
     borderRightWidth: 0,
+    flex: 1,
     height: "100%",
     shadowOffset: {
       width: 8,
@@ -1126,40 +1493,60 @@ const styles = StyleSheet.create({
   notesList: {
     paddingBottom: Spacing.four,
   },
-  noteRow: {
-    borderBottomWidth: 1,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.three,
+  notesTree: {
+    flex: 1,
   },
-  noteRowTop: {
-    alignItems: "baseline",
+  treeRow: {
+    alignItems: "center",
+    borderBottomWidth: 1,
     flexDirection: "row",
     gap: Spacing.two,
-    justifyContent: "space-between",
+    height: 36,
+    paddingRight: Spacing.three,
   },
-  noteTitle: {
+  folderGlyph: {
+    height: 14,
+    width: 16,
+  },
+  folderGlyphTop: {
+    borderRadius: 1,
+    height: 3,
+    left: 1,
+    position: "absolute",
+    top: 1,
+    width: 8,
+  },
+  folderGlyphBody: {
+    borderRadius: 2,
+    borderWidth: 1.5,
+    height: 10,
+    left: 0,
+    position: "absolute",
+    top: 4,
+    width: 16,
+  },
+  noteGlyph: {
+    borderRadius: 1,
+    borderWidth: 1.5,
+    height: 15,
+    width: 12,
+  },
+  treeFolderText: {
     flex: 1,
-    fontFamily: Fonts.serifSemiBold,
-    fontSize: 17,
-    fontWeight: "600",
-    lineHeight: 22,
-  },
-  noteDate: {
     fontFamily: Fonts.mono,
-    fontSize: 11,
+    fontSize: 12,
     lineHeight: 16,
   },
-  noteFolder: {
+  treeNoteText: {
+    flex: 1,
     fontFamily: Fonts.mono,
-    fontSize: 11,
-    lineHeight: 18,
-    marginTop: Spacing.one,
+    fontSize: 12,
+    lineHeight: 16,
   },
-  noteExcerpt: {
-    fontFamily: Fonts.serif,
-    fontSize: 14,
-    lineHeight: 19,
-    marginTop: Spacing.one,
+  treeDisclosure: {
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+    lineHeight: 16,
   },
   sourceInput: {
     flex: 1,

@@ -8,5 +8,5 @@ coverage/
 .DS_Store
 *.log
 .env
-example-notes
+vault-notes
 target
