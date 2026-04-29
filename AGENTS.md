@@ -14,7 +14,7 @@ Clean, minimal, beautiful Obsidian killer. Best note-taking app.
 
 ## Project Shape
 
-- Root workspace uses `pnpm@11.0.0-rc.5`.
+- Root workspace uses `pnpm@11.0.0`.
 - Packages live directly at the repo root:
   - `desktop/` - Electron desktop app.
   - `mobile/` - Expo mobile app.

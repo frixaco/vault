@@ -1,0 +1,3 @@
+android/build/
+rust/lib/*.a
+rust/target/

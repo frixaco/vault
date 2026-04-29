@@ -1,7 +1,9 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   Animated,
   Dimensions,
+  Easing,
   Keyboard,
   KeyboardAvoidingView,
   PanResponder,
@@ -12,11 +14,20 @@ import {
   Text,
   TextInput,
   View,
-  type TextStyle,
+  type GestureResponderEvent,
+  type PanResponderGestureState,
 } from "react-native";
 import { EnrichedMarkdownText, type MarkdownStyle } from "react-native-enriched-markdown";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Directory, File, Paths } from "expo-file-system";
 
+import {
+  disposeVaultSearch,
+  initializeVaultSearch,
+  searchVaultFiles,
+  waitForVaultSearchScan,
+  type SearchFile,
+} from "../../modules/vault-search";
 import { Colors, Fonts, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -28,14 +39,7 @@ type NoteListItem = {
   excerpt: string;
   updated: string;
 };
-type InlineSegment =
-  | { type: "text"; text: string }
-  | { type: "code"; marker: string; text: string }
-  | { type: "strong"; marker: string; text: string }
-  | { type: "em"; marker: string; text: string }
-  | { type: "strongEm"; marker: string; text: string }
-  | { type: "strike"; marker: string; text: string }
-  | { type: "link"; before: string; label: string; after: string };
+type SearchState = "idle" | "initializing" | "ready" | "error";
 
 const InitialMarkdown = `# Untitled note
 
@@ -85,6 +89,8 @@ const Notes: NoteListItem[] = [
 ];
 
 const NotesPanelWidth = Dimensions.get("window").width;
+const SearchPaletteMaxHeight = Dimensions.get("window").height - 140;
+const SearchEase = Easing.bezier(0.2, 0, 0, 1);
 
 function createMarkdownStyle(theme: AppTheme): MarkdownStyle {
   return {
@@ -241,14 +247,113 @@ function createMarkdownStyle(theme: AppTheme): MarkdownStyle {
 export function MarkdownEditor() {
   const theme = useTheme();
   const inputRef = useRef<TextInput>(null);
+  const searchInputRef = useRef<TextInput>(null);
   const notesTranslateX = useRef(new Animated.Value(-NotesPanelWidth)).current;
+  const searchOpacity = useRef(new Animated.Value(0)).current;
+  const searchScale = useRef(new Animated.Value(0.97)).current;
+  const searchTranslateY = useRef(new Animated.Value(-12)).current;
   const [markdown, setMarkdown] = useState(InitialMarkdown);
   const [mode, setMode] = useState<EditorMode>("preview");
   const [notesOpen, setNotesOpen] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchFile[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchState, setSearchState] = useState<SearchState>("idle");
+  const [searchError, setSearchError] = useState<string | null>(null);
   const markdownStyle = useMemo(() => createMarkdownStyle(theme), [theme]);
+
+  useEffect(() => {
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (active) setReduceMotion(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function initializeSearch() {
+      setSearchState("initializing");
+
+      try {
+        const { dataPath, notesPath } = seedSearchNotes();
+        await initializeVaultSearch({
+          basePath: notesPath,
+          dataPath,
+        });
+        await waitForVaultSearchScan(1000);
+
+        if (active) {
+          setSearchState("ready");
+          setSearchError(null);
+        }
+      } catch (error) {
+        if (active) {
+          setSearchState("error");
+          setSearchError(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
+    initializeSearch();
+
+    return () => {
+      active = false;
+      disposeVaultSearch();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!searchOpen || searchState !== "ready") return;
+
+    const trimmedQuery = searchQuery.trim();
+    if (!trimmedQuery) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    let active = true;
+    setSearching(true);
+
+    const timeout = setTimeout(() => {
+      searchVaultFiles(trimmedQuery, 24)
+        .then((response) => {
+          if (active) {
+            setSearchResults(response.items);
+            setSearchError(null);
+          }
+        })
+        .catch((error: unknown) => {
+          if (active) {
+            setSearchResults([]);
+            setSearchError(error instanceof Error ? error.message : String(error));
+          }
+        })
+        .finally(() => {
+          if (active) setSearching(false);
+        });
+    }, 80);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [searchOpen, searchQuery, searchState]);
 
   const openNotes = () => {
     Keyboard.dismiss();
+    if (searchOpen) {
+      closeSearch();
+    }
     setNotesOpen(true);
     Animated.timing(notesTranslateX, {
       duration: 180,
@@ -269,29 +374,133 @@ export function MarkdownEditor() {
     });
   };
 
-  const swipeResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: ({ nativeEvent }, gesture) => {
-          const horizontalSwipe =
-            Math.abs(gesture.dx) > 16 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4;
-          const openingFromEdge = !notesOpen && nativeEvent.pageX < 32 && gesture.dx > 0;
-          const closingPanel = notesOpen && gesture.dx < 0;
+  const openSearch = () => {
+    if (notesOpen) {
+      closeNotes();
+    }
 
-          return horizontalSwipe && (openingFromEdge || closingPanel);
-        },
-        onPanResponderRelease: (_event, gesture) => {
-          if (!notesOpen && gesture.dx > 56) {
-            Keyboard.dismiss();
-            openNotes();
-          }
-          if (notesOpen && gesture.dx < -48) {
-            closeNotes();
-          }
-        },
+    Keyboard.dismiss();
+    setSearchOpen(true);
+
+    if (reduceMotion) {
+      searchOpacity.setValue(1);
+      searchScale.setValue(1);
+      searchTranslateY.setValue(0);
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+      return;
+    }
+
+    searchOpacity.setValue(0);
+    searchScale.setValue(0.97);
+    searchTranslateY.setValue(-12);
+    Animated.parallel([
+      Animated.timing(searchOpacity, {
+        duration: 160,
+        easing: SearchEase,
+        toValue: 1,
+        useNativeDriver: true,
       }),
-    [notesOpen],
-  );
+      Animated.timing(searchScale, {
+        duration: 180,
+        easing: SearchEase,
+        toValue: 1,
+        useNativeDriver: true,
+      }),
+      Animated.timing(searchTranslateY, {
+        duration: 180,
+        easing: SearchEase,
+        toValue: 0,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      searchInputRef.current?.focus();
+    });
+  };
+
+  const closeSearch = () => {
+    Keyboard.dismiss();
+
+    if (reduceMotion) {
+      setSearchOpen(false);
+      return;
+    }
+
+    Animated.parallel([
+      Animated.timing(searchOpacity, {
+        duration: 120,
+        easing: SearchEase,
+        toValue: 0,
+        useNativeDriver: true,
+      }),
+      Animated.timing(searchScale, {
+        duration: 120,
+        easing: SearchEase,
+        toValue: 0.985,
+        useNativeDriver: true,
+      }),
+      Animated.timing(searchTranslateY, {
+        duration: 120,
+        easing: SearchEase,
+        toValue: -8,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        setSearchOpen(false);
+      }
+    });
+  };
+
+  const openSearchResult = (result: SearchFile) => {
+    const title = getNoteTitleFromPath(result.path);
+    const note = Notes.find((item) => item.title === title);
+
+    setMarkdown(note ? createSeedMarkdown(note) : `# ${title}\n\n${result.path}`);
+    setMode("preview");
+    closeSearch();
+  };
+
+  const swipeResponder = useMemo(() => {
+    function shouldHandlePan(
+      { nativeEvent }: GestureResponderEvent,
+      gesture: PanResponderGestureState,
+    ) {
+      const horizontalSwipe =
+        Math.abs(gesture.dx) > 16 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4;
+      const verticalSwipe =
+        Math.abs(gesture.dy) > 18 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.4;
+      const openingFromEdge = !notesOpen && nativeEvent.pageX < 32 && gesture.dx > 0;
+      const closingPanel = notesOpen && gesture.dx < 0;
+      const startedNearTop = gesture.y0 < 128;
+      const openingSearch = !searchOpen && !notesOpen && startedNearTop && gesture.dy > 0;
+      const closingSearch = searchOpen && gesture.y0 < 260 && gesture.dy < 0;
+
+      return (
+        (horizontalSwipe && (openingFromEdge || closingPanel)) ||
+        (verticalSwipe && (openingSearch || closingSearch))
+      );
+    }
+
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: shouldHandlePan,
+      onMoveShouldSetPanResponderCapture: shouldHandlePan,
+      onPanResponderRelease: (_event, gesture) => {
+        if (!notesOpen && gesture.dx > 56) {
+          Keyboard.dismiss();
+          openNotes();
+        }
+        if (notesOpen && gesture.dx < -48) {
+          closeNotes();
+        }
+        if (!searchOpen && !notesOpen && gesture.dy > 56) {
+          openSearch();
+        }
+        if (searchOpen && gesture.dy < -44) {
+          closeSearch();
+        }
+      },
+    });
+  }, [notesOpen, searchOpen]);
 
   const enterEditMode = () => {
     setMode("edit");
@@ -315,29 +524,20 @@ export function MarkdownEditor() {
         style={styles.keyboardView}
       >
         {isEditing ? (
-          <ScrollView
-            contentContainerStyle={styles.sourceContent}
-            keyboardShouldPersistTaps="handled"
-            style={styles.source}
-          >
-            <View style={styles.sourceLayer}>
-              <StyledMarkdownSource markdown={markdown} theme={theme} />
-              <TextInput
-                ref={inputRef}
-                autoCapitalize="sentences"
-                cursorColor={theme.accent}
-                multiline
-                onChangeText={setMarkdown}
-                placeholder="Start writing..."
-                placeholderTextColor={theme.textFaint}
-                scrollEnabled={false}
-                selectionColor={theme.selection}
-                style={[styles.sourceInput, { color: "transparent" }]}
-                textAlignVertical="top"
-                value={markdown}
-              />
-            </View>
-          </ScrollView>
+          <TextInput
+            ref={inputRef}
+            autoCapitalize="sentences"
+            cursorColor={theme.accent}
+            multiline
+            onChangeText={setMarkdown}
+            placeholder="Start writing..."
+            placeholderTextColor={theme.textFaint}
+            scrollEnabled
+            selectionColor={theme.selection}
+            style={[styles.sourceInput, { color: theme.text }]}
+            textAlignVertical="top"
+            value={markdown}
+          />
         ) : (
           <ScrollView
             contentContainerStyle={styles.previewContent}
@@ -393,7 +593,147 @@ export function MarkdownEditor() {
           </Animated.View>
         </View>
       )}
+
+      {searchOpen && (
+        <SearchOverlay
+          error={searchError}
+          inputRef={searchInputRef}
+          nativeResults={searchResults}
+          notes={Notes}
+          onChangeQuery={setSearchQuery}
+          onClose={closeSearch}
+          onOpenResult={openSearchResult}
+          opacity={searchOpacity}
+          query={searchQuery}
+          scale={searchScale}
+          searchState={searchState}
+          searching={searching}
+          theme={theme}
+          translateY={searchTranslateY}
+        />
+      )}
     </SafeAreaView>
+  );
+}
+
+function SearchOverlay({
+  error,
+  inputRef,
+  nativeResults,
+  notes,
+  onChangeQuery,
+  onClose,
+  onOpenResult,
+  opacity,
+  query,
+  scale,
+  searchState,
+  searching,
+  theme,
+  translateY,
+}: {
+  error: string | null;
+  inputRef: React.RefObject<TextInput | null>;
+  nativeResults: SearchFile[];
+  notes: NoteListItem[];
+  onChangeQuery: (query: string) => void;
+  onClose: () => void;
+  onOpenResult: (result: SearchFile) => void;
+  opacity: Animated.Value;
+  query: string;
+  scale: Animated.Value;
+  searchState: SearchState;
+  searching: boolean;
+  theme: AppTheme;
+  translateY: Animated.Value;
+}) {
+  const showNativeResults = query.trim().length > 0;
+  const recentResults = notes.map(noteToSearchFile);
+  const results = showNativeResults ? nativeResults : recentResults;
+  const label = showNativeResults ? "Notes" : "Recent";
+  const emptyText =
+    searchState === "initializing"
+      ? "Indexing notes"
+      : error
+        ? error
+        : searching
+          ? "Searching notes"
+          : showNativeResults
+            ? "No notes found"
+            : "No notes";
+
+  return (
+    <Animated.View style={[styles.searchOverlay, { opacity }]}>
+      <Pressable accessibilityLabel="Close search" onPress={onClose} style={styles.searchScrim} />
+      <Animated.View
+        style={[
+          styles.searchPalette,
+          {
+            backgroundColor: theme.backgroundElement,
+            borderColor: theme.hairlineStrong,
+            shadowColor: theme.text,
+            transform: [{ translateY }, { scale }],
+          },
+        ]}
+      >
+        <View style={[styles.searchInputRow, { borderColor: theme.hairline }]}>
+          <SearchIcon color={theme.textFaint} />
+          <TextInput
+            ref={inputRef}
+            autoCapitalize="none"
+            autoCorrect={false}
+            cursorColor={theme.accent}
+            onChangeText={onChangeQuery}
+            placeholder="Find note..."
+            placeholderTextColor={theme.textFaint}
+            selectionColor={theme.selection}
+            style={[styles.searchInput, { color: theme.text }]}
+            value={query}
+          />
+        </View>
+
+        <View style={styles.searchResultFrame}>
+          <Text style={[styles.searchSectionLabel, { color: theme.textFaint }]}>{label}</Text>
+          {results.length > 0 && !error ? (
+            <ScrollView
+              contentContainerStyle={styles.searchResultList}
+              keyboardShouldPersistTaps="handled"
+              style={styles.searchResultScroll}
+            >
+              {results.map((result, index) => (
+                <Pressable
+                  key={result.path}
+                  onPress={() => onOpenResult(result)}
+                  style={({ pressed }) => [
+                    styles.searchResultRow,
+                    {
+                      backgroundColor: index === 0 ? theme.active : "transparent",
+                      transform: [{ scale: pressed ? 0.985 : 1 }],
+                    },
+                  ]}
+                >
+                  <Text numberOfLines={1} style={[styles.searchResultTitle, { color: theme.text }]}>
+                    {getNoteTitleFromPath(result.path)}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    style={[styles.searchResultMeta, { color: theme.textFaint }]}
+                  >
+                    {getSearchDirectory(result.path)}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : (
+            <Text
+              style={[styles.searchEmptyText, { color: error ? theme.accent : theme.textFaint }]}
+            >
+              {emptyText}
+            </Text>
+          )}
+        </View>
+      </Animated.View>
+    </Animated.View>
   );
 }
 
@@ -458,231 +798,64 @@ function NotesPanel({
   );
 }
 
-function StyledMarkdownSource({ markdown, theme }: { markdown: string; theme: AppTheme }) {
-  if (markdown.length === 0) {
-    return (
-      <Text style={[styles.sourceText, { color: theme.textSecondary }]}>Start writing...</Text>
-    );
+function seedSearchNotes() {
+  const notesDirectory = new Directory(Paths.document, "VaultNotes");
+  const dataDirectory = new Directory(Paths.document, ".VaultSearch");
+
+  notesDirectory.create({ idempotent: true, intermediates: true });
+  dataDirectory.create({ idempotent: true, intermediates: true });
+
+  for (const note of Notes) {
+    const folder = new Directory(notesDirectory, note.folder);
+    folder.create({ idempotent: true, intermediates: true });
+
+    const file = new File(folder, `${sanitizeNoteFilename(note.title)}.md`);
+    file.create({ intermediates: true, overwrite: true });
+    file.write(createSeedMarkdown(note));
   }
 
-  const lines = markdown.split("\n");
-  let inCodeBlock = false;
-
-  return (
-    <Text style={[styles.sourceText, { color: theme.text }]}>
-      {lines.map((line, index) => {
-        const trimmed = line.trim();
-        const isFence = trimmed.startsWith("```");
-        const isCode = inCodeBlock || isFence;
-        const lineStyle = getLineStyle(line, isCode, theme);
-
-        if (isFence) {
-          inCodeBlock = !inCodeBlock;
-        }
-
-        return (
-          <Text key={`${index}-${line}`} style={lineStyle}>
-            {isCode ? line : renderInlineSource(line, theme)}
-            {index < lines.length - 1 ? "\n" : ""}
-          </Text>
-        );
-      })}
-    </Text>
-  );
+  return {
+    dataPath: toNativePath(dataDirectory.uri),
+    notesPath: toNativePath(notesDirectory.uri),
+  };
 }
 
-function getLineStyle(line: string, isCode: boolean, theme: AppTheme): TextStyle {
-  const trimmed = line.trim();
+function createSeedMarkdown(note: NoteListItem) {
+  return `# ${note.title}
 
-  if (isCode) {
-    return {
-      backgroundColor: theme.active,
-      fontFamily: Fonts.mono,
-      fontSize: 16,
-      lineHeight: 31,
-    };
-  }
-  if (/^#{1,6}\s/.test(trimmed)) {
-    return {
-      fontFamily: Fonts.serifSemiBold,
-      fontWeight: "600",
-    };
-  }
-  if (/^>\s?/.test(trimmed)) {
-    return {
-      color: theme.textSecondary,
-    };
-  }
-  if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
-    return {
-      color: theme.textSecondary,
-      fontFamily: Fonts.mono,
-    };
-  }
-  if (/^\|.*\|$/.test(trimmed)) {
-    return {
-      fontFamily: Fonts.mono,
-      fontSize: 16,
-      lineHeight: 31,
-    };
-  }
+${note.excerpt}
 
-  return {};
+Folder: ${note.folder}
+Updated: ${note.updated}
+`;
 }
 
-function renderInlineSource(line: string, theme: AppTheme) {
-  return parseInlineSource(line).map((segment, index) =>
-    renderInlineSegment(segment, index, theme),
-  );
+function toNativePath(uri: string) {
+  return decodeURI(uri.replace(/^file:\/\//, ""));
 }
 
-function parseInlineSource(text: string): InlineSegment[] {
-  const segments: InlineSegment[] = [];
-  let rest = text;
-
-  while (rest.length > 0) {
-    const match = findNextInlineMatch(rest);
-
-    if (!match) {
-      segments.push({ type: "text", text: rest });
-      break;
-    }
-
-    if (match.index > 0) {
-      segments.push({ type: "text", text: rest.slice(0, match.index) });
-    }
-
-    segments.push(match.segment);
-    rest = rest.slice(match.index + match.raw.length);
-  }
-
-  return segments;
+function sanitizeNoteFilename(value: string) {
+  return value.replace(/[/:]/g, " ").trim();
 }
 
-function findNextInlineMatch(text: string) {
-  const patterns: Array<{
-    regex: RegExp;
-    create: (match: RegExpExecArray) => InlineSegment;
-  }> = [
-    {
-      regex: /(`)([^`\n]+)(`)/,
-      create: (match) => ({ type: "code", marker: match[1], text: match[2] }),
-    },
-    {
-      regex: /(\*\*\*|___)(.+?)\1/,
-      create: (match) => ({ type: "strongEm", marker: match[1], text: match[2] }),
-    },
-    {
-      regex: /(\*\*|__)(.+?)\1/,
-      create: (match) => ({ type: "strong", marker: match[1], text: match[2] }),
-    },
-    {
-      regex: /(~~)(.+?)~~/,
-      create: (match) => ({ type: "strike", marker: match[1], text: match[2] }),
-    },
-    {
-      regex: /(!\[)([^\]]*)\]\(([^)]*)\)/,
-      create: (match) => ({
-        type: "link",
-        before: match[1],
-        label: match[2],
-        after: `](${match[3]})`,
-      }),
-    },
-    {
-      regex: /(\[)([^\]]+)\]\(([^)]*)\)/,
-      create: (match) => ({
-        type: "link",
-        before: match[1],
-        label: match[2],
-        after: `](${match[3]})`,
-      }),
-    },
-    {
-      regex: /(<https?:\/\/[^>\s]+>)/,
-      create: (match) => ({ type: "link", before: "<", label: match[1].slice(1, -1), after: ">" }),
-    },
-    {
-      regex: /(\*|_)([^*_]+?)\1/,
-      create: (match) => ({ type: "em", marker: match[1], text: match[2] }),
-    },
-  ];
-
-  return patterns
-    .map((pattern) => {
-      const match = pattern.regex.exec(text);
-      if (!match) {
-        return null;
-      }
-      return {
-        index: match.index,
-        raw: match[0],
-        segment: pattern.create(match),
-      };
-    })
-    .filter((match) => match !== null)
-    .sort((a, b) => a.index - b.index)[0];
+function noteToSearchFile(note: NoteListItem): SearchFile {
+  return {
+    directory: note.folder,
+    name: `${note.title}.md`,
+    path: `${note.folder}/${note.title}.md`,
+    score: 0,
+  };
 }
 
-function renderInlineSegment(segment: InlineSegment, index: number, theme: AppTheme) {
-  const markerStyle = [styles.inlineMarker, { color: theme.textFaint }];
+function getNoteTitleFromPath(path: string) {
+  const filename = path.split("/").at(-1) ?? path;
+  return filename.endsWith(".md") ? filename.slice(0, -3) : filename;
+}
 
-  if (segment.type === "text") {
-    return <Text key={index}>{segment.text}</Text>;
-  }
-  if (segment.type === "code") {
-    return (
-      <Text key={index}>
-        <Text style={markerStyle}>{segment.marker}</Text>
-        <Text style={[styles.inlineCode, { backgroundColor: theme.active }]}>{segment.text}</Text>
-        <Text style={markerStyle}>{segment.marker}</Text>
-      </Text>
-    );
-  }
-  if (segment.type === "strong") {
-    return (
-      <Text key={index}>
-        <Text style={markerStyle}>{segment.marker}</Text>
-        <Text style={styles.inlineStrong}>{segment.text}</Text>
-        <Text style={markerStyle}>{segment.marker}</Text>
-      </Text>
-    );
-  }
-  if (segment.type === "em") {
-    return (
-      <Text key={index}>
-        <Text style={markerStyle}>{segment.marker}</Text>
-        <Text style={styles.inlineEm}>{segment.text}</Text>
-        <Text style={markerStyle}>{segment.marker}</Text>
-      </Text>
-    );
-  }
-  if (segment.type === "strongEm") {
-    return (
-      <Text key={index}>
-        <Text style={markerStyle}>{segment.marker}</Text>
-        <Text style={[styles.inlineStrong, styles.inlineEm]}>{segment.text}</Text>
-        <Text style={markerStyle}>{segment.marker}</Text>
-      </Text>
-    );
-  }
-  if (segment.type === "strike") {
-    return (
-      <Text key={index}>
-        <Text style={markerStyle}>{segment.marker}</Text>
-        <Text style={[styles.inlineStrike, { color: theme.textSecondary }]}>{segment.text}</Text>
-        <Text style={markerStyle}>{segment.marker}</Text>
-      </Text>
-    );
-  }
-
-  return (
-    <Text key={index}>
-      <Text style={markerStyle}>{segment.before}</Text>
-      <Text style={[styles.inlineLink, { color: theme.accent }]}>{segment.label}</Text>
-      <Text style={markerStyle}>{segment.after}</Text>
-    </Text>
-  );
+function getSearchDirectory(path: string) {
+  const parts = path.split("/");
+  parts.pop();
+  return parts.join("/") || "Vault";
 }
 
 function EditIcon({ color, accentColor }: { color: string; accentColor: string }) {
@@ -721,6 +894,15 @@ function CloseIcon({ color }: { color: string }) {
   );
 }
 
+function SearchIcon({ color }: { color: string }) {
+  return (
+    <View style={styles.searchIcon}>
+      <View style={[styles.searchIconCircle, { borderColor: color }]} />
+      <View style={[styles.searchIconHandle, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -751,6 +933,86 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     width: "100%",
     zIndex: 1,
+  },
+  searchOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    paddingHorizontal: Spacing.three,
+    paddingTop: 72,
+    zIndex: 2,
+  },
+  searchScrim: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  searchPalette: {
+    borderRadius: 3,
+    borderWidth: 1,
+    maxHeight: SearchPaletteMaxHeight,
+    padding: Spacing.two,
+    shadowOffset: {
+      width: 0,
+      height: 18,
+    },
+    shadowOpacity: 0.14,
+    shadowRadius: 42,
+    width: "100%",
+  },
+  searchInputRow: {
+    alignItems: "center",
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: Spacing.two,
+    height: 42,
+    paddingHorizontal: Spacing.three,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+    lineHeight: 18,
+    padding: 0,
+  },
+  searchResultFrame: {
+    flexShrink: 1,
+    paddingTop: Spacing.two,
+  },
+  searchSectionLabel: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    lineHeight: 14,
+    paddingBottom: Spacing.one,
+    paddingHorizontal: Spacing.two,
+    textTransform: "uppercase",
+  },
+  searchResultScroll: {
+    maxHeight: SearchPaletteMaxHeight - 72,
+  },
+  searchResultList: {
+    gap: Spacing.half,
+  },
+  searchResultRow: {
+    borderRadius: 2,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 9,
+  },
+  searchResultTitle: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  searchResultMeta: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: Spacing.half,
+  },
+  searchEmptyText: {
+    fontFamily: Fonts.mono,
+    fontSize: 12,
+    lineHeight: 18,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.four,
+    textAlign: "center",
   },
   notesHeader: {
     alignItems: "center",
@@ -810,53 +1072,14 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: Spacing.one,
   },
-  source: {
-    flex: 1,
-  },
-  sourceContent: {
-    paddingBottom: 96,
-  },
-  sourceLayer: {
-    minHeight: 420,
-    position: "relative",
-  },
-  sourceText: {
-    fontFamily: Fonts.serif,
-    fontSize: 18,
-    lineHeight: 31,
-    minHeight: 420,
-    padding: 0,
-  },
   sourceInput: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
     fontFamily: Fonts.serif,
     fontSize: 18,
     lineHeight: 31,
     minHeight: 420,
     padding: 0,
-  },
-  inlineMarker: {
-    fontFamily: Fonts.mono,
-    fontSize: 14,
-  },
-  inlineStrong: {
-    fontFamily: Fonts.serifSemiBold,
-    fontWeight: "600",
-  },
-  inlineEm: {
-    fontFamily: Fonts.serifItalic,
-    fontStyle: "normal",
-  },
-  inlineCode: {
-    borderRadius: Spacing.one,
-    fontFamily: Fonts.mono,
-    fontSize: 15,
-  },
-  inlineStrike: {
-    textDecorationLine: "line-through",
-  },
-  inlineLink: {
-    textDecorationLine: "underline",
+    paddingBottom: 96,
   },
   preview: {
     flex: 1,
@@ -926,5 +1149,26 @@ const styles = StyleSheet.create({
     height: 1,
     position: "absolute",
     width: 14,
+  },
+  searchIcon: {
+    height: 15,
+    width: 15,
+  },
+  searchIconCircle: {
+    borderRadius: 5,
+    borderWidth: 1.5,
+    height: 10,
+    left: 0,
+    position: "absolute",
+    top: 0,
+    width: 10,
+  },
+  searchIconHandle: {
+    height: 6,
+    left: 10,
+    position: "absolute",
+    top: 9,
+    transform: [{ rotate: "-45deg" }],
+    width: 1.5,
   },
 });

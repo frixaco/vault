@@ -1,0 +1,148 @@
+import org.gradle.api.file.FileSystemOperations
+import org.gradle.process.ExecOperations
+
+import javax.inject.Inject
+
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+interface InjectedGradleOps {
+  @Inject
+  ExecOperations getExecOps()
+
+  @Inject
+  FileSystemOperations getFsOps()
+}
+
+group = 'expo.modules.vaultsearch'
+version = '0.7.10'
+
+android {
+  namespace "expo.modules.vaultsearch"
+
+  if (rootProject.ext.has("ndkVersion")) {
+    ndkVersion rootProject.ext.ndkVersion
+  }
+
+  defaultConfig {
+    if (rootProject.ext.has("minSdkVersion")) {
+      minSdkVersion rootProject.ext.minSdkVersion
+    }
+    versionCode 1
+    versionName "0.7.10"
+  }
+  sourceSets {
+    main {
+      jniLibs.srcDirs += "$buildDir/generated/rust/jniLibs"
+    }
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+def rustRoot = file("../rust")
+def rustJniLibsDir = file("$buildDir/generated/rust/jniLibs")
+def gradleOps = objects.newInstance(InjectedGradleOps)
+def androidMinSdkVersion = rootProject.ext.has("minSdkVersion") ? rootProject.ext.minSdkVersion : 24
+def androidRustTargets = [
+  "armeabi-v7a": [
+    target: "armv7-linux-androideabi",
+    compiler: "armv7a-linux-androideabi"
+  ],
+  "arm64-v8a": [
+    target: "aarch64-linux-android",
+    compiler: "aarch64-linux-android"
+  ],
+  "x86": [
+    target: "i686-linux-android",
+    compiler: "i686-linux-android"
+  ],
+  "x86_64": [
+    target: "x86_64-linux-android",
+    compiler: "x86_64-linux-android"
+  ]
+]
+def requestedAndroidAbis = providers.gradleProperty("reactNativeArchitectures")
+  .orElse(providers.provider {
+    (rootProject.findProperty("reactNativeArchitectures") ?: "").toString()
+  })
+
+def selectedAndroidRustAbis = {
+  def requested = requestedAndroidAbis.get()
+    .split(",")
+    .collect { it.trim() }
+    .findAll { !it.isEmpty() }
+  if (requested.isEmpty()) {
+    return androidRustTargets.keySet().toList()
+  }
+
+  def unsupported = requested.findAll { !androidRustTargets.containsKey(it) }
+  if (!unsupported.isEmpty()) {
+    throw new GradleException("VaultSearch Rust does not support Android ABI(s): ${unsupported.join(", ")}")
+  }
+
+  return requested
+}
+
+tasks.register("buildVaultSearchRustAndroid") {
+  inputs.files(fileTree(rustRoot) {
+    exclude "lib/**"
+    exclude "target/**"
+  })
+  inputs.property("reactNativeArchitectures", requestedAndroidAbis)
+  inputs.property("androidMinSdkVersion", androidMinSdkVersion)
+  if (rootProject.ext.has("ndkVersion")) {
+    inputs.property("ndkVersion", rootProject.ext.ndkVersion)
+  }
+  outputs.dir(rustJniLibsDir)
+
+  doLast {
+    def ndkHome = android.ndkDirectory
+    if (ndkHome == null || !ndkHome.exists()) {
+      throw new GradleException("Android NDK is required to build VaultSearch Rust")
+    }
+
+    def toolchainDir = new File(ndkHome, "toolchains/llvm/prebuilt")
+      .listFiles()
+      .find {
+        it.isDirectory() &&
+          (it.name.startsWith("darwin-") || it.name.startsWith("linux-") || it.name.startsWith("windows-"))
+      }
+    if (toolchainDir == null) {
+      throw new GradleException("Could not find Android NDK LLVM toolchain")
+    }
+
+    gradleOps.fsOps.delete {
+      delete rustJniLibsDir
+    }
+
+    selectedAndroidRustAbis().each { abi ->
+      def config = androidRustTargets[abi]
+      gradleOps.execOps.exec {
+        commandLine "rustup", "target", "add", config.target
+      }
+
+      def envPrefix = config.target.toUpperCase().replace("-", "_")
+      def targetEnvName = config.target.replace("-", "_")
+      def clang = new File(toolchainDir, "bin/${config.compiler}${androidMinSdkVersion}-clang").absolutePath
+      gradleOps.execOps.exec {
+        workingDir rustRoot
+        environment "AR_${targetEnvName}", new File(toolchainDir, "bin/llvm-ar").absolutePath
+        environment "CC_${targetEnvName}", clang
+        environment "CXX_${targetEnvName}", "${clang}++"
+        environment "CARGO_TARGET_${envPrefix}_LINKER", clang
+        commandLine "cargo", "build", "--release", "--target", config.target
+      }
+
+      gradleOps.fsOps.copy {
+        from new File(rustRoot, "target/${config.target}/release/libvault_search_ffi.so")
+        into new File(rustJniLibsDir, abi)
+      }
+    }
+  }
+}
+
+preBuild.dependsOn("buildVaultSearchRustAndroid")
