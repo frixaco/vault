@@ -1,13 +1,13 @@
-package expo.modules.vaultsearch
+package expo.modules.vaultshared
 
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
-class VaultSearchModule : Module() {
+class VaultSharedModule : Module() {
   private var handle: Long = 0
 
   override fun definition() = ModuleDefinition {
-    Name("VaultSearch")
+    Name("VaultShared")
 
     AsyncFunction("initialize") { basePath: String, dataPath: String ->
       destroyHandle()
@@ -39,7 +39,7 @@ class VaultSearchModule : Module() {
 
   private fun requireHandle(): Long {
     if (handle == 0L) {
-      throw RuntimeException("VaultSearch is not initialized")
+      throw RuntimeException("VaultShared is not initialized")
     }
 
     return handle
@@ -61,7 +61,7 @@ class VaultSearchModule : Module() {
 
   companion object {
     init {
-      System.loadLibrary("vault_search_ffi")
+      System.loadLibrary("vault_shared_ffi")
     }
   }
 }

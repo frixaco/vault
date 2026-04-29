@@ -1,5 +1,5 @@
 [package]
-name = "vault-search-ffi"
+name = "vault-shared-ffi"
 version = "0.1.0"
 edition = "2021"
 

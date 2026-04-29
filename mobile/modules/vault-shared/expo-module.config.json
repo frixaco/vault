@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["VaultSharedModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.vaultshared.VaultSharedModule"]
+  }
+}

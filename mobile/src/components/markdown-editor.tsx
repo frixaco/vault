@@ -27,7 +27,7 @@ import {
   searchVaultFiles,
   waitForVaultSearchScan,
   type SearchFile,
-} from "../../modules/vault-search";
+} from "../../modules/vault-shared";
 import { Colors, Fonts, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 

@@ -1,6 +1,6 @@
 import { NativeModule, requireNativeModule } from "expo";
 
-declare class VaultSearchModule extends NativeModule {
+declare class VaultSharedModule extends NativeModule {
   dispose(): void;
   getProgressJson(): Promise<string>;
   initialize(basePath: string, dataPath: string): Promise<void>;
@@ -9,4 +9,4 @@ declare class VaultSearchModule extends NativeModule {
 }
 
 // This call loads the native module object from the JSI.
-export default requireNativeModule<VaultSearchModule>("VaultSearch");
+export default requireNativeModule<VaultSharedModule>("VaultShared");

@@ -1,34 +1,34 @@
 import ExpoModulesCore
 
-@_silgen_name("vault_search_create")
-private func vaultSearchCreate(
+@_silgen_name("vault_shared_search_create")
+private func vaultSharedSearchCreate(
   _ basePath: UnsafePointer<CChar>,
   _ dataPath: UnsafePointer<CChar>
 ) -> UnsafeMutableRawPointer?
 
-@_silgen_name("vault_search_destroy")
-private func vaultSearchDestroy(_ handle: UnsafeMutableRawPointer?)
+@_silgen_name("vault_shared_search_destroy")
+private func vaultSharedSearchDestroy(_ handle: UnsafeMutableRawPointer?)
 
-@_silgen_name("vault_search_wait_for_scan")
-private func vaultSearchWaitForScan(_ handle: UnsafeMutableRawPointer?, _ timeoutMs: UInt64) -> Bool
+@_silgen_name("vault_shared_search_wait_for_scan")
+private func vaultSharedSearchWaitForScan(_ handle: UnsafeMutableRawPointer?, _ timeoutMs: UInt64) -> Bool
 
-@_silgen_name("vault_search_progress_json")
-private func vaultSearchProgressJson(_ handle: UnsafeMutableRawPointer?) -> UnsafeMutablePointer<CChar>?
+@_silgen_name("vault_shared_search_progress_json")
+private func vaultSharedSearchProgressJson(_ handle: UnsafeMutableRawPointer?) -> UnsafeMutablePointer<CChar>?
 
-@_silgen_name("vault_search_files_json")
-private func vaultSearchFilesJson(
+@_silgen_name("vault_shared_search_files_json")
+private func vaultSharedSearchFilesJson(
   _ handle: UnsafeMutableRawPointer?,
   _ query: UnsafePointer<CChar>,
   _ limit: UInt32
 ) -> UnsafeMutablePointer<CChar>?
 
-@_silgen_name("vault_search_free_string")
-private func vaultSearchFreeString(_ value: UnsafeMutablePointer<CChar>?)
+@_silgen_name("vault_shared_free_string")
+private func vaultSharedFreeString(_ value: UnsafeMutablePointer<CChar>?)
 
-@_silgen_name("vault_search_take_last_error")
-private func vaultSearchTakeLastError() -> UnsafeMutablePointer<CChar>?
+@_silgen_name("vault_shared_take_last_error")
+private func vaultSharedTakeLastError() -> UnsafeMutablePointer<CChar>?
 
-public class VaultSearchModule: Module {
+public class VaultSharedModule: Module {
   private var handle: UnsafeMutableRawPointer?
 
   deinit {
@@ -36,20 +36,20 @@ public class VaultSearchModule: Module {
   }
 
   public func definition() -> ModuleDefinition {
-    Name("VaultSearch")
+    Name("VaultShared")
 
     AsyncFunction("initialize") { (basePath: String, dataPath: String) in
       self.destroyHandle()
 
       let nextHandle = basePath.withCString { basePathPointer in
         dataPath.withCString { dataPathPointer in
-          vaultSearchCreate(basePathPointer, dataPathPointer)
+          vaultSharedSearchCreate(basePathPointer, dataPathPointer)
         }
       }
 
       guard let nextHandle else {
         throw NSError(
-          domain: "VaultSearch",
+          domain: "VaultShared",
           code: 1,
           userInfo: [NSLocalizedDescriptionKey: self.takeLastError()]
         )
@@ -63,16 +63,16 @@ public class VaultSearchModule: Module {
         return false
       }
 
-      return vaultSearchWaitForScan(handle, timeoutMs)
+      return vaultSharedSearchWaitForScan(handle, timeoutMs)
     }
 
     AsyncFunction("getProgressJson") {
-      try self.takeJson(vaultSearchProgressJson(try self.requireHandle()))
+      try self.takeJson(vaultSharedSearchProgressJson(try self.requireHandle()))
     }
 
     AsyncFunction("searchFilesJson") { (query: String, limit: UInt32) in
       try query.withCString { queryPointer in
-        try self.takeJson(vaultSearchFilesJson(try self.requireHandle(), queryPointer, limit))
+        try self.takeJson(vaultSharedSearchFilesJson(try self.requireHandle(), queryPointer, limit))
       }
     }
 
@@ -84,9 +84,9 @@ public class VaultSearchModule: Module {
   private func requireHandle() throws -> UnsafeMutableRawPointer {
     guard let handle else {
       throw NSError(
-        domain: "VaultSearch",
+        domain: "VaultShared",
         code: 2,
-        userInfo: [NSLocalizedDescriptionKey: "VaultSearch is not initialized"]
+        userInfo: [NSLocalizedDescriptionKey: "VaultShared is not initialized"]
       )
     }
 
@@ -95,7 +95,7 @@ public class VaultSearchModule: Module {
 
   private func destroyHandle() {
     if let handle {
-      vaultSearchDestroy(handle)
+      vaultSharedSearchDestroy(handle)
       self.handle = nil
     }
   }
@@ -103,26 +103,26 @@ public class VaultSearchModule: Module {
   private func takeJson(_ pointer: UnsafeMutablePointer<CChar>?) throws -> String {
     guard let pointer else {
       throw NSError(
-        domain: "VaultSearch",
+        domain: "VaultShared",
         code: 3,
-        userInfo: [NSLocalizedDescriptionKey: "VaultSearch returned an empty response"]
+        userInfo: [NSLocalizedDescriptionKey: "VaultShared returned an empty response"]
       )
     }
 
     defer {
-      vaultSearchFreeString(pointer)
+      vaultSharedFreeString(pointer)
     }
 
     return String(cString: pointer)
   }
 
   private func takeLastError() -> String {
-    guard let pointer = vaultSearchTakeLastError() else {
-      return "Unknown VaultSearch native error"
+    guard let pointer = vaultSharedTakeLastError() else {
+      return "Unknown VaultShared native error"
     }
 
     defer {
-      vaultSearchFreeString(pointer)
+      vaultSharedFreeString(pointer)
     }
 
     return String(cString: pointer)

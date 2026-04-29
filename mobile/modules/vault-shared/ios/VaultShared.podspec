@@ -1,8 +1,8 @@
 Pod::Spec.new do |s|
-  s.name           = 'VaultSearch'
+  s.name           = 'VaultShared'
   s.version        = '1.0.0'
-  s.summary        = 'Vault native search module'
-  s.description    = 'Expo module bridge for the Rust fff-search index.'
+  s.summary        = 'Vault shared native module'
+  s.description    = 'Expo module bridge for shared Rust features.'
   s.author         = ''
   s.homepage       = 'https://docs.expo.dev/modules/'
   s.platforms      = {
@@ -19,16 +19,16 @@ Pod::Spec.new do |s|
   s.libraries = 'c++', 'z', 'iconv'
 
   s.script_phase = {
-    :name => 'Build VaultSearch Rust',
+    :name => 'Build VaultShared Rust',
     :execution_position => :before_compile,
     :input_files => [
-      '${PODS_TARGET_SRCROOT}/VaultSearchModule.swift',
+      '${PODS_TARGET_SRCROOT}/VaultSharedModule.swift',
       '${PODS_TARGET_SRCROOT}/../rust/Cargo.toml',
       '${PODS_TARGET_SRCROOT}/../rust/Cargo.lock',
       '${PODS_TARGET_SRCROOT}/../rust/src'
     ],
     :output_files => [
-      '${PODS_CONFIGURATION_BUILD_DIR}/VaultSearch/libvault_search_ffi.a'
+      '${PODS_CONFIGURATION_BUILD_DIR}/VaultShared/libvault_shared_ffi.a'
     ],
     :script => <<-SCRIPT
 set -euo pipefail
@@ -36,18 +36,18 @@ set -euo pipefail
 export PATH="$HOME/.cargo/bin:$PATH"
 
 RUST_ROOT="${PODS_TARGET_SRCROOT}/../rust"
-OUT_DIR="${PODS_CONFIGURATION_BUILD_DIR}/VaultSearch"
-LIB_NAME="libvault_search_ffi.a"
+OUT_DIR="${PODS_CONFIGURATION_BUILD_DIR}/VaultShared"
+LIB_NAME="libvault_shared_ffi.a"
 
 mkdir -p "$OUT_DIR"
 
 if ! command -v cargo >/dev/null 2>&1; then
-  echo "error: Cargo is required to build VaultSearch Rust." >&2
+  echo "error: Cargo is required to build VaultShared Rust." >&2
   exit 1
 fi
 
 if ! command -v rustup >/dev/null 2>&1; then
-  echo "error: rustup is required to verify installed VaultSearch Rust targets." >&2
+  echo "error: rustup is required to verify installed VaultShared Rust targets." >&2
   exit 1
 fi
 
@@ -95,13 +95,13 @@ case "${PLATFORM_NAME}" in
       esac
     done
     if [ "${#libs[@]}" -eq 0 ]; then
-      echo "Unsupported simulator architecture set for VaultSearch Rust: ${ARCHS}" >&2
+      echo "Unsupported simulator architecture set for VaultShared Rust: ${ARCHS}" >&2
       exit 1
     fi
     copy_or_lipo "${libs[@]}"
     ;;
   *)
-    echo "Unsupported platform for VaultSearch Rust build: ${PLATFORM_NAME}"
+    echo "Unsupported platform for VaultShared Rust build: ${PLATFORM_NAME}"
     exit 1
     ;;
 esac
@@ -110,11 +110,11 @@ esac
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'LIBRARY_SEARCH_PATHS' => '$(inherited) "$(PODS_CONFIGURATION_BUILD_DIR)/VaultSearch"',
-    'OTHER_LDFLAGS' => '$(inherited) -lvault_search_ffi',
+    'LIBRARY_SEARCH_PATHS' => '$(inherited) "$(PODS_CONFIGURATION_BUILD_DIR)/VaultShared"',
+    'OTHER_LDFLAGS' => '$(inherited) -lvault_shared_ffi',
   }
   s.user_target_xcconfig = {
-    'LIBRARY_SEARCH_PATHS' => '$(inherited) "$(PODS_CONFIGURATION_BUILD_DIR)/VaultSearch"',
-    'OTHER_LDFLAGS' => '$(inherited) -lvault_search_ffi',
+    'LIBRARY_SEARCH_PATHS' => '$(inherited) "$(PODS_CONFIGURATION_BUILD_DIR)/VaultShared"',
+    'OTHER_LDFLAGS' => '$(inherited) -lvault_shared_ffi',
   }
 end

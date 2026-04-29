@@ -189,9 +189,10 @@ fn json_result<T: Serialize>(result: Result<T, String>) -> *mut c_char {
         },
     };
 
-    string_to_c(serde_json::to_string(&envelope).unwrap_or_else(|error| {
-        format!(r#"{{"ok":false,"value":null,"error":"{error}"}}"#)
-    }))
+    string_to_c(
+        serde_json::to_string(&envelope)
+            .unwrap_or_else(|error| format!(r#"{{"ok":false,"value":null,"error":"{error}"}}"#)),
+    )
 }
 
 fn with_search<T, F>(handle: *mut c_void, operation: F) -> Result<T, String>
@@ -207,7 +208,7 @@ where
 }
 
 #[no_mangle]
-pub extern "C" fn vault_search_create(
+pub extern "C" fn vault_shared_search_create(
     base_path: *const c_char,
     data_path: *const c_char,
 ) -> *mut c_void {
@@ -218,14 +219,14 @@ pub extern "C" fn vault_search_create(
     match result {
         Ok(search) => Box::into_raw(Box::new(search)) as *mut c_void,
         Err(error) => {
-            vault_search_set_last_error(error);
+            vault_shared_set_last_error(error);
             ptr::null_mut()
         }
     }
 }
 
 #[no_mangle]
-pub extern "C" fn vault_search_destroy(handle: *mut c_void) {
+pub extern "C" fn vault_shared_search_destroy(handle: *mut c_void) {
     if handle.is_null() {
         return;
     }
@@ -236,17 +237,17 @@ pub extern "C" fn vault_search_destroy(handle: *mut c_void) {
 }
 
 #[no_mangle]
-pub extern "C" fn vault_search_wait_for_scan(handle: *mut c_void, timeout_ms: u64) -> bool {
+pub extern "C" fn vault_shared_search_wait_for_scan(handle: *mut c_void, timeout_ms: u64) -> bool {
     with_search(handle, |search| Ok(search.wait_for_scan(timeout_ms))).unwrap_or(false)
 }
 
 #[no_mangle]
-pub extern "C" fn vault_search_progress_json(handle: *mut c_void) -> *mut c_char {
+pub extern "C" fn vault_shared_search_progress_json(handle: *mut c_void) -> *mut c_char {
     json_result(with_search(handle, |search| search.progress()))
 }
 
 #[no_mangle]
-pub extern "C" fn vault_search_files_json(
+pub extern "C" fn vault_shared_search_files_json(
     handle: *mut c_void,
     query: *const c_char,
     limit: u32,
@@ -257,7 +258,7 @@ pub extern "C" fn vault_search_files_json(
 }
 
 #[no_mangle]
-pub extern "C" fn vault_search_free_string(value: *mut c_char) {
+pub extern "C" fn vault_shared_free_string(value: *mut c_char) {
     if value.is_null() {
         return;
     }
@@ -271,14 +272,14 @@ thread_local! {
     static LAST_ERROR: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
 
-fn vault_search_set_last_error(error: String) {
+fn vault_shared_set_last_error(error: String) {
     LAST_ERROR.with(|last_error| {
         *last_error.borrow_mut() = Some(error);
     });
 }
 
 #[no_mangle]
-pub extern "C" fn vault_search_take_last_error() -> *mut c_char {
+pub extern "C" fn vault_shared_take_last_error() -> *mut c_char {
     LAST_ERROR.with(|last_error| {
         string_to_c(
             last_error
@@ -299,9 +300,10 @@ mod android {
     use jni::JNIEnv;
 
     use super::{
-        c_string_to_string, string_to_c, vault_search_create, vault_search_destroy,
-        vault_search_files_json, vault_search_free_string, vault_search_progress_json,
-        vault_search_take_last_error, vault_search_wait_for_scan,
+        c_string_to_string, vault_shared_free_string, vault_shared_search_create,
+        vault_shared_search_destroy, vault_shared_search_files_json,
+        vault_shared_search_progress_json, vault_shared_search_wait_for_scan,
+        vault_shared_take_last_error,
     };
 
     fn jstring_to_c(env: &mut JNIEnv, value: JString) -> CString {
@@ -316,12 +318,14 @@ mod android {
 
         let string = c_string_to_string(value)
             .unwrap_or_else(|error| format!(r#"{{"ok":false,"value":null,"error":"{error}"}}"#));
-        vault_search_free_string(value);
-        env.new_string(string).expect("valid Java string").into_raw()
+        vault_shared_free_string(value);
+        env.new_string(string)
+            .expect("valid Java string")
+            .into_raw()
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_expo_modules_vaultsearch_VaultSearchModule_nativeCreate(
+    pub extern "system" fn Java_expo_modules_vaultshared_VaultSharedModule_nativeCreate(
         mut env: JNIEnv,
         _this: JObject,
         base_path: JString,
@@ -330,39 +334,44 @@ mod android {
         let base_path = jstring_to_c(&mut env, base_path);
         let data_path = jstring_to_c(&mut env, data_path);
 
-        vault_search_create(base_path.as_ptr(), data_path.as_ptr()) as jlong
+        vault_shared_search_create(base_path.as_ptr(), data_path.as_ptr()) as jlong
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_expo_modules_vaultsearch_VaultSearchModule_nativeDestroy(
+    pub extern "system" fn Java_expo_modules_vaultshared_VaultSharedModule_nativeDestroy(
         _env: JNIEnv,
         _this: JObject,
         handle: jlong,
     ) {
-        vault_search_destroy(handle as *mut c_void);
+        vault_shared_search_destroy(handle as *mut c_void);
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_expo_modules_vaultsearch_VaultSearchModule_nativeWaitForScan(
+    pub extern "system" fn Java_expo_modules_vaultshared_VaultSharedModule_nativeWaitForScan(
         _env: JNIEnv,
         _this: JObject,
         handle: jlong,
         timeout_ms: jlong,
     ) -> jboolean {
-        vault_search_wait_for_scan(handle as *mut c_void, timeout_ms as u64) as jboolean
+        vault_shared_search_wait_for_scan(handle as *mut c_void, timeout_ms as u64) as jboolean
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_expo_modules_vaultsearch_VaultSearchModule_nativeProgressJson(
+    pub extern "system" fn Java_expo_modules_vaultshared_VaultSharedModule_nativeProgressJson(
         mut env: JNIEnv,
         _this: JObject,
         handle: jlong,
     ) -> jstring {
-        unsafe { c_to_jstring(&mut env, vault_search_progress_json(handle as *mut c_void)) }
+        unsafe {
+            c_to_jstring(
+                &mut env,
+                vault_shared_search_progress_json(handle as *mut c_void),
+            )
+        }
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_expo_modules_vaultsearch_VaultSearchModule_nativeSearchFilesJson(
+    pub extern "system" fn Java_expo_modules_vaultshared_VaultSharedModule_nativeSearchFilesJson(
         mut env: JNIEnv,
         _this: JObject,
         handle: jlong,
@@ -373,16 +382,16 @@ mod android {
         unsafe {
             c_to_jstring(
                 &mut env,
-                vault_search_files_json(handle as *mut c_void, query.as_ptr(), limit as u32),
+                vault_shared_search_files_json(handle as *mut c_void, query.as_ptr(), limit as u32),
             )
         }
     }
 
     #[no_mangle]
-    pub extern "system" fn Java_expo_modules_vaultsearch_VaultSearchModule_nativeTakeLastError(
+    pub extern "system" fn Java_expo_modules_vaultshared_VaultSharedModule_nativeTakeLastError(
         mut env: JNIEnv,
         _this: JObject,
     ) -> jstring {
-        unsafe { c_to_jstring(&mut env, vault_search_take_last_error()) }
+        unsafe { c_to_jstring(&mut env, vault_shared_take_last_error()) }
     }
 }
