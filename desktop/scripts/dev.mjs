@@ -8,13 +8,13 @@ const repoRoot = dirname(desktopDir);
 const srcDir = join(desktopDir, "src");
 const rendererDir = join(desktopDir, "dist-renderer");
 const electronDir = join(desktopDir, "dist-electron");
-const filesBinaryName = process.platform === "win32" ? "files.exe" : "files";
-const filesBinaryPath = join(desktopDir, "build", "files", "bin", filesBinaryName);
+const sharedBinaryName = process.platform === "win32" ? "vault-shared.exe" : "vault-shared";
+const sharedBinaryPath = join(desktopDir, "build", "vault-shared", "bin", sharedBinaryName);
 const assets = ["index.html"];
 
-if (!existsSync(filesBinaryPath)) {
-  console.log("[dev] files binary not found, building rust crate once");
-  const result = spawnSync("pnpm", ["--workspace-root", "build-files"], {
+if (!existsSync(sharedBinaryPath)) {
+  console.log("[dev] vault-shared binary not found, building rust crate once");
+  const result = spawnSync("pnpm", ["--workspace-root", "build-vault-shared"], {
     cwd: repoRoot,
     stdio: "inherit",
     shell: process.platform === "win32",

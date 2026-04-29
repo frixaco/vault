@@ -10,6 +10,8 @@ use fff_search::{
 };
 use serde::Serialize;
 
+pub mod files;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SearchItem {

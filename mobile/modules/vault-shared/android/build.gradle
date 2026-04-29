@@ -43,7 +43,7 @@ android {
   }
 }
 
-def rustRoot = file("../rust")
+def rustRoot = file("../../../../crates/vault-shared")
 def rustJniLibsDir = file("$buildDir/generated/rust/jniLibs")
 def gradleOps = objects.newInstance(InjectedGradleOps)
 def androidMinSdkVersion = rootProject.ext.has("minSdkVersion") ? rootProject.ext.minSdkVersion : 24

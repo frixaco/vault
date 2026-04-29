@@ -4,10 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib", "cdylib"]
+name = "vault_shared_ffi"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[[bin]]
+name = "vault-shared"
+path = "src/main.rs"
 
 [dependencies]
 fff-search = "0.6.4"
+jwalk = "0.8.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

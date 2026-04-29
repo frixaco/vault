@@ -13,7 +13,7 @@ Pod::Spec.new do |s|
 
   s.dependency 'ExpoModulesCore'
 
-  s.preserve_paths = '../rust/Cargo.toml', '../rust/Cargo.lock', '../rust/src/**/*'
+  s.preserve_paths = '../../../../crates/vault-shared/Cargo.toml', '../../../../crates/vault-shared/Cargo.lock', '../../../../crates/vault-shared/src/**/*'
   s.source_files = '*.{h,m,mm,swift,hpp,cpp}'
   s.frameworks = 'Security', 'SystemConfiguration'
   s.libraries = 'c++', 'z', 'iconv'
@@ -23,9 +23,9 @@ Pod::Spec.new do |s|
     :execution_position => :before_compile,
     :input_files => [
       '${PODS_TARGET_SRCROOT}/VaultSharedModule.swift',
-      '${PODS_TARGET_SRCROOT}/../rust/Cargo.toml',
-      '${PODS_TARGET_SRCROOT}/../rust/Cargo.lock',
-      '${PODS_TARGET_SRCROOT}/../rust/src'
+      '${PODS_TARGET_SRCROOT}/../../../../crates/vault-shared/Cargo.toml',
+      '${PODS_TARGET_SRCROOT}/../../../../crates/vault-shared/Cargo.lock',
+      '${PODS_TARGET_SRCROOT}/../../../../crates/vault-shared/src'
     ],
     :output_files => [
       '${PODS_CONFIGURATION_BUILD_DIR}/VaultShared/libvault_shared_ffi.a'
@@ -35,7 +35,7 @@ set -euo pipefail
 
 export PATH="$HOME/.cargo/bin:$PATH"
 
-RUST_ROOT="${PODS_TARGET_SRCROOT}/../rust"
+RUST_ROOT="${PODS_TARGET_SRCROOT}/../../../../crates/vault-shared"
 OUT_DIR="${PODS_CONFIGURATION_BUILD_DIR}/VaultShared"
 LIB_NAME="libvault_shared_ffi.a"
 

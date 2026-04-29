@@ -1,8 +1,8 @@
-use std::{env, path::PathBuf};
+use std::path::{Path, PathBuf};
 
 use jwalk::{Error, WalkDir};
 
-fn list_files(root: PathBuf) -> Result<(), Error> {
+pub fn markdown_file_paths(root: impl AsRef<Path>) -> Result<Vec<PathBuf>, Error> {
     let walk_dir = WalkDir::new(root).process_read_dir(|_, _, _, children| {
         children.retain(|dir_entry_result| {
             dir_entry_result
@@ -19,24 +19,13 @@ fn list_files(root: PathBuf) -> Result<(), Error> {
         });
     });
 
+    let mut files = Vec::new();
     for entry in walk_dir {
         let entry = entry?;
         if entry.file_type().is_file() {
-            println!("{}", entry.path().display());
+            files.push(entry.path());
         }
     }
 
-    Ok(())
-}
-
-fn main() {
-    let root = env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .expect("usage: files <notes-dir>");
-
-    if let Err(error) = list_files(root) {
-        eprintln!("{error}");
-        std::process::exit(1);
-    }
+    Ok(files)
 }
