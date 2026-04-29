@@ -70,7 +70,7 @@ export function resolveMobileMediaUri(notePath: string, mediaPath: string) {
     : getNoteAssetsDirectory(notePath);
   const file = new File(baseDirectory, ...normalizedMediaPath.split("/"));
 
-  return file.exists ? encodeURI(file.uri) : "";
+  return file.exists ? file.uri : "";
 }
 
 export async function createMobileNote(content: string) {

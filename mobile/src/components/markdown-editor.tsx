@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlashList, type ListRenderItem } from "@shopify/flash-list";
+import { Image, type ImageLoadEventData } from "expo-image";
+import { VideoView, useVideoPlayer } from "expo-video";
 import {
   AccessibilityInfo,
   Animated,
@@ -7,6 +9,7 @@ import {
   Easing,
   Keyboard,
   KeyboardAvoidingView,
+  Linking,
   PanResponder,
   Platform,
   Pressable,
@@ -67,9 +70,47 @@ type NoteTreeRow =
       path: string;
     };
 type NoteTreeIndex = {
+  allFolderPaths: string[];
+  allFolderPathSet: Set<string>;
   foldersByParent: Map<string, string[]>;
   notesByDirectory: Map<string, MobileNoteMeta[]>;
 };
+type PreviewBlock =
+  | {
+      id: string;
+      kind: "markdown";
+      markdown: string;
+    }
+  | {
+      id: string;
+      kind: "media";
+      media: PreviewMedia;
+    };
+type PreviewEmbedProvider = "twitter" | "youtube";
+type PreviewMedia =
+  | {
+      id: string;
+      kind: "image";
+      label: string;
+      rawTarget: string;
+      uri: string;
+    }
+  | {
+      id: string;
+      kind: "video";
+      label: string;
+      rawTarget: string;
+      uri: string;
+    }
+  | {
+      id: string;
+      kind: "embed";
+      openUrl: string;
+      provider: PreviewEmbedProvider;
+      thumbnailUrl: string;
+      title: string;
+      url: string;
+    };
 type SearchState = "idle" | "initializing" | "ready" | "error";
 
 const EmptySearchResponse: NoteSearchResponse = {
@@ -85,7 +126,10 @@ const NotesOpenEdgeWidth = 48;
 const SearchPaletteMaxHeight = Dimensions.get("window").height - 140;
 const SearchEase = Easing.bezier(0.2, 0, 0, 1);
 const ImageMediaExtensions = new Set(["avif", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
+const VideoMediaExtensions = new Set(["m4v", "mov", "mp4", "ogv", "webm"]);
 const MaxCachedNoteContents = 12;
+const PreviewMediaPattern =
+  /!\[\[([^\]\n]+)\]\]|!\[([^\]\n]*)\]\(([^\n)]+)\)|(https?:\/\/[^\s<>()\]]+)/g;
 
 function isBlankMarkdown(content: string) {
   return (
@@ -97,28 +141,95 @@ function isBlankMarkdown(content: string) {
   );
 }
 
-function createPreviewMarkdown(notePath: string | null, content: string) {
-  if (!notePath) return content;
+function createPreviewBlocks(notePath: string | null, content: string): PreviewBlock[] {
+  if (!notePath) return [{ id: "markdown:0", kind: "markdown", markdown: content }];
 
-  return content
-    .replace(/!\[\[([^\]\n]+)\]\]/g, (raw, target: string) => {
-      const { label, mediaPath, rawTarget } = parseObsidianMediaTarget(target);
-      if (!isImageMediaPath(mediaPath)) return raw;
+  const blocks: PreviewBlock[] = [];
+  const matcher = new RegExp(PreviewMediaPattern);
+  let lastIndex = 0;
+  let matchIndex = 0;
 
-      const uri = resolveMobileMediaUri(notePath, mediaPath);
-      if (!uri) return raw;
+  for (const match of content.matchAll(matcher)) {
+    const startIndex = match.index ?? 0;
+    const media = createPreviewMediaFromMatch(notePath, match, matchIndex);
+    if (!media) continue;
 
-      return `![${label || mediaPath}](${formatMarkdownLinkTarget(uri)} "${rawTarget}")`;
-    })
-    .replace(/!\[([^\]\n]*)\]\(([^\n)]+)\)/g, (raw, alt: string, rawTarget: string) => {
-      const { suffix, target } = parseMarkdownImageTarget(rawTarget);
-      if (!shouldResolveVaultMediaPath(target) || !isImageMediaPath(target)) return raw;
+    if (startIndex > lastIndex) {
+      blocks.push({
+        id: `markdown:${matchIndex}:${lastIndex}`,
+        kind: "markdown",
+        markdown: content.slice(lastIndex, startIndex),
+      });
+    }
 
-      const uri = resolveMobileMediaUri(notePath, target);
-      if (!uri) return raw;
-
-      return `![${alt}](${formatMarkdownLinkTarget(uri)}${suffix})`;
+    blocks.push({
+      id: media.id,
+      kind: "media",
+      media,
     });
+    lastIndex = startIndex + match[0].length;
+    matchIndex += 1;
+  }
+
+  if (lastIndex < content.length) {
+    blocks.push({
+      id: `markdown:tail:${lastIndex}`,
+      kind: "markdown",
+      markdown: content.slice(lastIndex),
+    });
+  }
+
+  return blocks.length > 0 ? blocks : [{ id: "markdown:0", kind: "markdown", markdown: content }];
+}
+
+function createPreviewMediaFromMatch(
+  notePath: string,
+  match: RegExpMatchArray,
+  matchIndex: number,
+): PreviewMedia | null {
+  if (match[1]) {
+    const { label, mediaPath, rawTarget } = parseObsidianMediaTarget(match[1]);
+    return createLocalPreviewMedia(notePath, mediaPath, label, rawTarget, matchIndex);
+  }
+
+  if (match[3]) {
+    const { target } = parseMarkdownImageTarget(match[3]);
+    const embed = getEmbedForUrl(target, match[2] ?? "");
+    if (embed) return { id: `embed:${matchIndex}:${embed.url}`, kind: "embed", ...embed };
+
+    return createLocalPreviewMedia(notePath, target, match[2] ?? "", target, matchIndex);
+  }
+
+  if (match[4]) {
+    const embed = getEmbedForUrl(match[4], "");
+    if (embed) return { id: `embed:${matchIndex}:${embed.url}`, kind: "embed", ...embed };
+  }
+
+  return null;
+}
+
+function createLocalPreviewMedia(
+  notePath: string,
+  mediaPath: string,
+  label: string,
+  rawTarget: string,
+  matchIndex: number,
+): PreviewMedia | null {
+  if (!shouldResolveVaultMediaPath(mediaPath)) return null;
+
+  const mediaKind = getPreviewMediaKind(mediaPath);
+  if (!mediaKind) return null;
+
+  const uri = resolveMobileMediaUri(notePath, mediaPath);
+  if (!uri) return null;
+
+  return {
+    id: `media:${matchIndex}:${rawTarget}`,
+    kind: mediaKind,
+    label: label || mediaPath,
+    rawTarget,
+    uri,
+  };
 }
 
 function parseObsidianMediaTarget(target: string) {
@@ -158,17 +269,91 @@ function parseMarkdownImageTarget(rawTarget: string) {
   };
 }
 
-function formatMarkdownLinkTarget(target: string) {
-  return /[\s()<>]/.test(target) ? `<${target}>` : target;
-}
-
 function shouldResolveVaultMediaPath(mediaPath: string) {
   return mediaPath.length > 0 && !/^(?:[a-z][a-z0-9+.-]*:|#)/i.test(mediaPath);
 }
 
-function isImageMediaPath(mediaPath: string) {
+function getPreviewMediaKind(mediaPath: string) {
   const extension = mediaPath.split(/[?#]/, 1)[0]?.split(".").at(-1)?.toLowerCase() ?? "";
-  return ImageMediaExtensions.has(extension);
+  if (ImageMediaExtensions.has(extension)) return "image";
+  if (VideoMediaExtensions.has(extension)) return "video";
+  return null;
+}
+
+function getEmbedForUrl(rawUrl: string, label = "") {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  const youtubeVideoId = getYoutubeVideoId(url);
+  if (youtubeVideoId) {
+    const watchUrl = new URL("https://www.youtube.com/watch");
+    watchUrl.searchParams.set("v", youtubeVideoId);
+    const start = parseYoutubeTimestamp(url.searchParams.get("start") ?? url.searchParams.get("t"));
+    if (start) watchUrl.searchParams.set("t", `${start}s`);
+
+    return {
+      openUrl: watchUrl.toString(),
+      provider: "youtube" as const,
+      thumbnailUrl: `https://i.ytimg.com/vi/${youtubeVideoId}/hqdefault.jpg`,
+      title: label || "YouTube video",
+      url: rawUrl,
+    };
+  }
+
+  const host = url.hostname.replace(/^www\./, "");
+  if (host === "x.com" || host === "twitter.com") {
+    return {
+      openUrl: rawUrl,
+      provider: "twitter" as const,
+      thumbnailUrl: "",
+      title: label || "Post on X",
+      url: rawUrl,
+    };
+  }
+
+  return null;
+}
+
+function getYoutubeVideoId(url: URL) {
+  const host = url.hostname.replace(/^www\./, "");
+  let videoId: string | null = null;
+
+  if (host === "youtu.be") {
+    videoId = url.pathname.split("/").filter(Boolean)[0] ?? null;
+  } else if (host === "youtube.com" || host === "m.youtube.com" || host === "music.youtube.com") {
+    if (url.pathname === "/watch") {
+      videoId = url.searchParams.get("v");
+    } else {
+      const [kind, id] = url.pathname.split("/").filter(Boolean);
+      if (kind === "embed" || kind === "shorts" || kind === "live") videoId = id ?? null;
+    }
+  } else if (host === "youtube-nocookie.com") {
+    const [kind, id] = url.pathname.split("/").filter(Boolean);
+    if (kind === "embed") videoId = id ?? null;
+  }
+
+  if (!videoId || !/^[\w-]+$/.test(videoId)) return null;
+  return videoId;
+}
+
+function parseYoutubeTimestamp(value: string | null) {
+  if (!value) return null;
+
+  const secondsMatch = value.match(/^(\d+)s?$/);
+  if (secondsMatch) return Number(secondsMatch[1]);
+
+  const timeMatch = value.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/);
+  if (!timeMatch) return null;
+
+  const hours = Number(timeMatch[1] ?? 0);
+  const minutes = Number(timeMatch[2] ?? 0);
+  const seconds = Number(timeMatch[3] ?? 0);
+  const total = hours * 3600 + minutes * 60 + seconds;
+  return total > 0 ? total : null;
 }
 
 function getCachedNoteContent(cache: Map<string, string>, notePath: string) {
@@ -369,8 +554,8 @@ export function MarkdownEditor() {
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [searchError, setSearchError] = useState<string | null>(null);
   const markdownStyle = useMemo(() => createMarkdownStyle(theme), [theme]);
-  const previewMarkdown = useMemo(
-    () => createPreviewMarkdown(activeNotePath, markdown),
+  const previewBlocks = useMemo(
+    () => createPreviewBlocks(activeNotePath, markdown),
     [activeNotePath, markdown],
   );
 
@@ -767,14 +952,35 @@ export function MarkdownEditor() {
                 keyboardShouldPersistTaps="handled"
                 style={styles.preview}
               >
-                <EnrichedMarkdownText
-                  flavor="github"
-                  markdown={
-                    previewMarkdown.trim().length > 0 ? previewMarkdown : "Nothing to preview yet."
-                  }
-                  markdownStyle={markdownStyle}
-                  selectable
-                />
+                {hasPreviewContent(previewBlocks) ? (
+                  previewBlocks.map((block) =>
+                    block.kind === "markdown" ? (
+                      block.markdown.trim().length > 0 ? (
+                        <EnrichedMarkdownText
+                          key={block.id}
+                          flavor="github"
+                          markdown={block.markdown}
+                          markdownStyle={markdownStyle}
+                          selectable
+                        />
+                      ) : null
+                    ) : (
+                      <PreviewMediaBlock
+                        key={block.id}
+                        media={block.media}
+                        theme={theme}
+                        onError={setSearchError}
+                      />
+                    ),
+                  )
+                ) : (
+                  <EnrichedMarkdownText
+                    flavor="github"
+                    markdown="Nothing to preview yet."
+                    markdownStyle={markdownStyle}
+                    selectable
+                  />
+                )}
               </ScrollView>
             )}
 
@@ -820,6 +1026,127 @@ export function MarkdownEditor() {
         </View>
       </ReanimatedDrawerLayout>
     </SafeAreaView>
+  );
+}
+
+function hasPreviewContent(blocks: PreviewBlock[]) {
+  return blocks.some((block) => block.kind === "media" || block.markdown.trim().length > 0);
+}
+
+function PreviewMediaBlock({
+  media,
+  onError,
+  theme,
+}: {
+  media: PreviewMedia;
+  onError: (message: string) => void;
+  theme: AppTheme;
+}) {
+  const [imageAspectRatio, setImageAspectRatio] = useState(4 / 3);
+
+  if (media.kind === "image") {
+    return (
+      <View
+        style={[
+          styles.previewMediaFrame,
+          {
+            backgroundColor: theme.backgroundElement,
+            borderColor: theme.hairline,
+          },
+        ]}
+      >
+        <Image
+          accessibilityLabel={media.label}
+          contentFit="contain"
+          onError={(event) => onError(event.error)}
+          onLoad={(event: ImageLoadEventData) => {
+            const { height, width } = event.source;
+            if (width > 0 && height > 0) {
+              setImageAspectRatio(width / height);
+            }
+          }}
+          source={{ uri: media.uri }}
+          style={[styles.previewImage, { aspectRatio: imageAspectRatio }]}
+          transition={120}
+        />
+      </View>
+    );
+  }
+
+  if (media.kind === "video") {
+    return <PreviewVideoBlock media={media} theme={theme} />;
+  }
+
+  const providerLabel = media.provider === "youtube" ? "YouTube" : "X";
+
+  return (
+    <Pressable
+      accessibilityLabel={`Open ${media.title}`}
+      accessibilityRole="link"
+      onPress={() => {
+        void Linking.openURL(media.openUrl).catch((error: unknown) => {
+          onError(error instanceof Error ? error.message : String(error));
+        });
+      }}
+      style={({ pressed }) => [
+        styles.previewEmbed,
+        {
+          backgroundColor: theme.backgroundElement,
+          borderColor: theme.hairline,
+          transform: [{ scale: pressed ? 0.99 : 1 }],
+        },
+      ]}
+    >
+      {media.thumbnailUrl ? (
+        <View style={styles.previewEmbedThumbnail}>
+          <Image
+            accessibilityIgnoresInvertColors
+            contentFit="cover"
+            source={{ uri: media.thumbnailUrl }}
+            style={styles.previewEmbedImage}
+            transition={120}
+          />
+          <View style={styles.previewEmbedPlay}>
+            <View style={styles.previewEmbedPlayTriangle} />
+          </View>
+        </View>
+      ) : null}
+
+      <View style={styles.previewEmbedBody}>
+        <Text numberOfLines={1} style={[styles.previewEmbedProvider, { color: theme.textFaint }]}>
+          {providerLabel}
+        </Text>
+        <Text numberOfLines={2} style={[styles.previewEmbedTitle, { color: theme.text }]}>
+          {media.title}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function PreviewVideoBlock({
+  media,
+  theme,
+}: {
+  media: Extract<PreviewMedia, { kind: "video" }>;
+  theme: AppTheme;
+}) {
+  const player = useVideoPlayer({ uri: media.uri }, (videoPlayer) => {
+    videoPlayer.loop = false;
+  });
+
+  return (
+    <View
+      style={[
+        styles.previewMediaFrame,
+        {
+          backgroundColor: theme.backgroundElement,
+          borderColor: theme.hairline,
+        },
+      ]}
+    >
+      <VideoView contentFit="contain" nativeControls player={player} style={styles.previewVideo} />
+    </View>
   );
 }
 
@@ -1033,6 +1360,7 @@ function NotesPanel({
   theme: AppTheme;
 }) {
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
+  const knownFolderPathsRef = useRef<Set<string>>(new Set());
   const activeAncestors = useMemo(
     () => getAncestorDirectories(activeNotePath ?? ""),
     [activeNotePath],
@@ -1048,17 +1376,35 @@ function NotesPanel({
   );
 
   useEffect(() => {
-    if (activeAncestors.length === 0) return;
+    const activeAncestorSet = new Set(activeAncestors);
 
     setCollapsedFolders((current) => {
       let changed = false;
       const next = new Set(current);
-      for (const folder of activeAncestors) {
-        if (next.delete(folder)) changed = true;
+
+      for (const folderPath of treeIndex.allFolderPaths) {
+        if (activeAncestorSet.has(folderPath)) {
+          if (next.delete(folderPath)) changed = true;
+          continue;
+        }
+
+        if (!knownFolderPathsRef.current.has(folderPath)) {
+          next.add(folderPath);
+          changed = true;
+        }
       }
+
+      for (const folderPath of next) {
+        if (!treeIndex.allFolderPathSet.has(folderPath)) {
+          next.delete(folderPath);
+          changed = true;
+        }
+      }
+
+      knownFolderPathsRef.current = new Set(treeIndex.allFolderPaths);
       return changed ? next : current;
     });
-  }, [activeAncestors]);
+  }, [activeAncestors, treeIndex]);
 
   const toggleFolder = useCallback((folderPath: string) => {
     setCollapsedFolders((current) => {
@@ -1210,7 +1556,13 @@ function createNoteTreeIndex(notes: MobileNoteMeta[]): NoteTreeIndex {
     notesByDirectory.set(directory, directoryNotes);
   }
 
+  const allFolderPaths = [
+    ...new Set([...foldersByParent.values()].flatMap((folders) => [...folders])),
+  ].sort(comparePathBasename);
+
   return {
+    allFolderPaths,
+    allFolderPathSet: new Set(allFolderPaths),
     foldersByParent: new Map(
       [...foldersByParent.entries()].map(([directoryPath, folders]) => [
         directoryPath,
@@ -1561,7 +1913,75 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   previewContent: {
+    gap: Spacing.three,
     paddingBottom: 96,
+  },
+  previewMediaFrame: {
+    borderRadius: 3,
+    borderWidth: 1,
+    overflow: "hidden",
+    width: "100%",
+  },
+  previewImage: {
+    aspectRatio: 16 / 9,
+    width: "100%",
+  },
+  previewVideo: {
+    aspectRatio: 16 / 9,
+    width: "100%",
+  },
+  previewEmbed: {
+    borderRadius: 3,
+    borderWidth: 1,
+    overflow: "hidden",
+    width: "100%",
+  },
+  previewEmbedThumbnail: {
+    aspectRatio: 16 / 9,
+    width: "100%",
+  },
+  previewEmbedImage: {
+    height: "100%",
+    width: "100%",
+  },
+  previewEmbedPlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.62)",
+    borderRadius: 22,
+    height: 44,
+    justifyContent: "center",
+    left: "50%",
+    marginLeft: -22,
+    marginTop: -22,
+    position: "absolute",
+    top: "50%",
+    width: 44,
+  },
+  previewEmbedPlayTriangle: {
+    borderBottomColor: "transparent",
+    borderBottomWidth: 8,
+    borderLeftColor: "#fff",
+    borderLeftWidth: 13,
+    borderTopColor: "transparent",
+    borderTopWidth: 8,
+    height: 0,
+    marginLeft: 3,
+    width: 0,
+  },
+  previewEmbedBody: {
+    gap: Spacing.half,
+    padding: Spacing.three,
+  },
+  previewEmbedProvider: {
+    fontFamily: Fonts.mono,
+    fontSize: 10,
+    lineHeight: 14,
+    textTransform: "uppercase",
+  },
+  previewEmbedTitle: {
+    fontFamily: Fonts.mono,
+    fontSize: 13,
+    lineHeight: 18,
   },
   modeButton: {
     alignItems: "center",

@@ -40,7 +40,9 @@
           "supportsOpeningDocumentsInPlace": true
         }
       ],
-      "react-native-enriched-markdown"
+      "react-native-enriched-markdown",
+      "expo-image",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,
