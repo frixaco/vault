@@ -1,16 +1,15 @@
-# AGENTS.md
+# AGENTS.md for Vault monorepo project
+
+## General Rules
+
+- No fallbacks, no MVP/v1/v2 implementations. There is only one version and it's the final one. It either works or it does not.
+- Do not be afraid to refactor existing code when implementing some feature/fix, if it will result in cleaner, more robust, more maintainable and simpler code.
+- Do NOT use margins for styling. Use only padding and layout changes to achieve same result.
+- The codebase should stay "code swappable", meaning I should be able to change any core component if I want.
 
 ## Goal
 
-Clean, minimal, beautiful Obsidian killer. Best note-taking app.
-
-## Instruction Priority
-
-- Follow the user's instructions strictly and literally.
-- If the user gives an exact set of actions, do only those actions.
-- Do not add extra safety checks, formatting, tests, commits, or other workflow steps unless the user asks for them or they are strictly required to complete the exact requested action.
-- When the user says "don't do anything else", treat that as a hard boundary.
-- If an instruction is ambiguous, ask one concise clarifying question instead of guessing and doing extra work.
+Clean, minimal, beautiful Obsidian (the note-taking, personal knowledge management app) killer. The one and only one.
 
 ## Project Shape
 
@@ -19,19 +18,7 @@ Clean, minimal, beautiful Obsidian killer. Best note-taking app.
   - `desktop/` - Electron desktop app.
   - `mobile/` - Expo mobile app.
   - `sync-api/` - sync API.
-- Shared Rust code lives at `crates/vault-shared/`.
 - `crates/vault-shared` is the single Rust crate reused by desktop, Android, and iOS.
-- Keep desktop app code and desktop release configuration inside `desktop/`.
-- Root scripts should only orchestrate workspace packages or repo-level tooling.
-
-## Style And Tooling
-
-- Use dash-separated script names, never colon-separated names.
-- Use `oxfmt` for formatting and `oxlint` for linting.
-- Do not add ESLint or Prettier.
-- Use `@typescript/native-preview` and `tsgo` for TypeScript checks.
-- Keep the repo fully ESM unless a tool explicitly requires another format.
-- Prefer current official docs before making version-sensitive setup changes.
 
 ## Workspace Scripts
 
@@ -54,12 +41,11 @@ Clean, minimal, beautiful Obsidian killer. Best note-taking app.
 - The shared Rust package is `vault-shared-ffi`.
 - The Rust library crate name is `vault_shared_ffi`.
 - The desktop binary name is `vault-shared`.
-- Do not reintroduce a separate `crates/files` crate or a Rust crate nested under `mobile/modules/vault-shared/rust`.
 - Android and iOS must build from `crates/vault-shared`.
 - Android packages `libvault_shared_ffi.so` through `mobile/modules/vault-shared/android/build.gradle`.
 - iOS links `libvault_shared_ffi.a` through `mobile/modules/vault-shared/ios/VaultShared.podspec`.
 - The Expo native module name is `VaultShared`.
-- Keep search-specific TypeScript API compatibility in `mobile/modules/vault-shared`, but add future shared native features to the shared module rather than creating one native binary per feature.
+- Add future shared native features to `VaultShared` rather than creating one native binary per feature.
 
 ## Desktop Release Builds
 
@@ -109,43 +95,3 @@ pnpm measure-desktop-mac -- --skip-build
 pnpm measure-desktop-mac -- --keep-running
 pnpm measure-desktop-mac -- --install-path ~/Applications/Vault.app
 ```
-
-## Mobile
-
-- Mobile is an Expo app created from:
-
-```sh
-pnpm create expo-app mobile --template default@sdk-55
-```
-
-- Use Expo commands for Expo dependency alignment.
-- Prefer `expo install --check` and `expo install --fix` for SDK-correct mobile dependency checks.
-- Do not manually replace Expo-managed dependency versions with npm latest unless the user explicitly asks for that tradeoff.
-
-## Dependency And Build Script Policy
-
-- Check current package versions before adding new dependencies.
-- Keep `pnpm-workspace.yaml` `allowBuilds` accurate when dependencies need install-time scripts.
-- After dependency changes, verify:
-
-```sh
-pnpm install --frozen-lockfile
-pnpm fmt
-pnpm lint
-pnpm typecheck
-```
-
-## Git And Generated Files
-
-- Do not revert user changes unless explicitly asked.
-- Ignore unrelated dirty files.
-- Do not commit generated build output such as `desktop/dist/`, `dist/`, `out/`, `node_modules/`, or Expo cache output.
-- The metrics JSONL file is intentionally committed.
-
-## Pre-Handoff Checklist
-
-- `pnpm fmt` passes.
-- `pnpm lint` passes.
-- `pnpm typecheck` passes.
-- `pnpm install --frozen-lockfile` passes after dependency changes.
-- No unintended unrelated changes are included.

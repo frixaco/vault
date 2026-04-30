@@ -61,6 +61,4 @@ export async function trackVaultSearchSelection(query: string, notePath: string)
   return unwrapNativeJson(await VaultSharedModule.searchTrackSelectionJson(query, notePath));
 }
 
-const VaultSearchModule = VaultSharedModule;
-
-export { VaultSearchModule, VaultSharedModule };
+export { VaultSharedModule };
