@@ -1,4 +1,5 @@
 import type { AttachmentsMigrationResult } from "./media-types.js";
+import type { MediaLayoutFile } from "./media-layout.js";
 import type { NoteMeta, NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
 import type {
   NoteContentSearchResponse,
@@ -32,6 +33,7 @@ export type VaultApi = {
   openNote: (path: string) => Promise<string>;
   openPopup: (url: string) => Promise<void>;
   revealNote: (payload: { isFolder: boolean; sourcePath: string }) => Promise<void>;
+  openMediaLayout: (path: string) => Promise<MediaLayoutFile>;
   openTabMenu: (payload: { hasOthers: boolean; hasRight: boolean }) => Promise<TabMenuAction>;
   openVault: (payload: { path: string }) => Promise<OpenVaultResult>;
   searchNoteContent: (payload: { query: string }) => Promise<NoteContentSearchResponse>;
@@ -41,6 +43,7 @@ export type VaultApi = {
     content: string;
     path: string;
   }) => Promise<{ content: string; path: string }>;
+  saveMediaLayout: (payload: { layout: MediaLayoutFile; path: string }) => Promise<void>;
   setOpenNotePaths: (payload: { paths: string[] }) => Promise<void>;
   trackNoteSearchSelection: (payload: { notePath: string; query: string }) => Promise<void>;
 };

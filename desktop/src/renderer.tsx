@@ -5,10 +5,25 @@ import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "r
 import { createRoot } from "react-dom/client";
 import { CommandPalette } from "./command-palette.js";
 import { VaultEmbed, VaultLink } from "./editor-embed.js";
-import { setCurrentMarkdownNotePath, VaultImage, VaultMedia } from "./editor-media.js";
+import {
+  applyMediaLayoutToEditor,
+  collectEditorMediaLayout,
+  deleteEditorMedia,
+  MEDIA_ACTION_LEAVE_EVENT,
+  MEDIA_ACTION_TARGET_EVENT,
+  resetEditorMediaSize,
+  setCurrentMarkdownNotePath,
+  setMediaLayoutCommitHandler,
+  updateEditorMediaPath,
+  VaultImage,
+  VaultMedia,
+} from "./editor-media.js";
+import type { MediaActionTargetDetail } from "./editor-media.js";
 import { FileTreeFeature } from "./file-tree-feature.js";
 import type { SidebarSortMode } from "./file-tree-feature.js";
 import { IconSort } from "./icon-sort.js";
+import { createEmptyMediaLayout } from "./media-layout.js";
+import type { MediaLayoutFile } from "./media-layout.js";
 import { vaultApi } from "./renderer-api.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { TabBar } from "./tab-bar.js";
@@ -60,6 +75,8 @@ type PendingSearchJump = {
   jump: SearchJump;
   notePath: string;
 };
+
+type MediaAction = "delete" | "edit" | "reset";
 
 const sidebarSortOptions: Array<{ label: string; mode: SidebarSortMode }> = [
   { label: "Alphabetical A-Z", mode: { direction: "asc", key: "alphabetical" } },
@@ -258,6 +275,67 @@ function SidebarSortControl({
   );
 }
 
+function MediaActionRail({
+  onAction,
+  onPointerEnter,
+  onPointerLeave,
+  target,
+}: {
+  onAction: (action: MediaAction) => void;
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
+  target: MediaActionTargetDetail | null;
+}) {
+  if (!target) return null;
+
+  const top = Math.max(48, target.rect.top);
+  const left = Math.max(8, target.rect.left - 8);
+
+  return (
+    <div
+      className="media-action-rail"
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+      style={{ left, top }}
+    >
+      <button type="button" aria-label="Edit media path" onClick={() => onAction("edit")}>
+        <MediaActionIcon action="edit" />
+      </button>
+      <button
+        type="button"
+        aria-label="Reset media size"
+        disabled={!target.width}
+        onClick={() => onAction("reset")}
+      >
+        <MediaActionIcon action="reset" />
+      </button>
+      <button type="button" aria-label="Delete from note" onClick={() => onAction("delete")}>
+        <MediaActionIcon action="delete" />
+      </button>
+    </div>
+  );
+}
+
+function MediaActionIcon({ action }: { action: MediaAction }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d={getMediaActionIconPath(action)} />
+    </svg>
+  );
+}
+
+function getMediaActionIconPath(action: MediaAction) {
+  if (action === "delete") {
+    return "M4.5 4.5h7m-5.5 0v7m4-7v7M6 2.5h4l.6 2H5.4l.6-2Zm-2 2 1 9h6l1-9";
+  }
+
+  if (action === "reset") {
+    return "M4.5 6.5 2.5 4.5l2-2M3 4.5h6a4 4 0 1 1-3.4 6.1";
+  }
+
+  return "M3 11.5v1.5h1.5l7.1-7.1-1.5-1.5L3 11.5Zm6-6 1.5 1.5M10 3.5l1-1 1.5 1.5-1 1";
+}
+
 function App() {
   const [mode, setMode] = useState<"select-vault" | "editor">("select-vault");
   const [notes, setNotes] = useState<string[]>([]);
@@ -269,6 +347,7 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingSearchJump, setPendingSearchJump] = useState<PendingSearchJump | null>(null);
+  const [mediaActionTarget, setMediaActionTarget] = useState<MediaActionTargetDetail | null>(null);
   const [tabState, setTabState] = useState(createInitialTabState);
   const tabStateRef = useRef(tabState);
   const notesRef = useRef(new Set<string>());
@@ -277,6 +356,9 @@ function App() {
   const autosaveTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const creatingTempTabsRef = useRef(new Set<string>());
   const lastSavedContentRef = useRef(new Map<string, string>());
+  const mediaLayoutsRef = useRef(new Map<string, MediaLayoutFile>());
+  const mediaActionCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mediaActionRailHoveredRef = useRef(false);
   const openMarkdownNoteRef = useRef<(path: string) => void>(() => {});
   const activeTab = useMemo(
     () => tabState.tabs.find((tab) => tab.id === tabState.activeTabId) ?? tabState.tabs[0] ?? null,
@@ -310,6 +392,7 @@ function App() {
     setSidebarOpen(true);
     setTabState(createInitialTabState());
     lastSavedContentRef.current.clear();
+    mediaLayoutsRef.current.clear();
     setMode("editor");
   }, []);
 
@@ -387,47 +470,61 @@ function App() {
     }));
   }, []);
 
-  const openMarkdownNote = useCallback(async (notePath: string, jump?: SearchJump) => {
-    if (!notesRef.current.has(notePath)) return;
-    if (jump) setPendingSearchJump({ jump, notePath });
-
-    const existingTab = tabStateRef.current.tabs.find(
-      (tab) => tab.kind === "note" && tab.path === notePath,
-    );
-    if (existingTab) {
-      setTabState((current) => ({
-        ...current,
-        activeTabId: existingTab.id,
-      }));
-      return;
-    }
-
-    setError(null);
-    try {
-      const content = ensureTitleLineFromPath(notePath, await vaultApi.openNote(notePath));
-      lastSavedContentRef.current.set(notePath, content);
-      setTabState((current) => {
-        const nextTab = createNoteTab(notePath, content);
-
-        if (current.tabs.some((tab) => tab.kind === "note" && tab.path === notePath)) {
-          const existingNoteTab = current.tabs.find(
-            (tab) => tab.kind === "note" && tab.path === notePath,
-          );
-          return {
-            ...current,
-            activeTabId: existingNoteTab?.id ?? current.activeTabId,
-          };
-        }
-
-        return {
-          activeTabId: nextTab.id,
-          tabs: [...current.tabs, nextTab],
-        };
-      });
-    } catch (openError: unknown) {
-      setError(openError instanceof Error ? openError.message : String(openError));
-    }
+  const loadMediaLayout = useCallback(async (notePath: string) => {
+    const layout = await vaultApi.openMediaLayout(notePath);
+    mediaLayoutsRef.current.set(notePath, layout);
+    return layout;
   }, []);
+
+  const openMarkdownNote = useCallback(
+    async (notePath: string, jump?: SearchJump) => {
+      if (!notesRef.current.has(notePath)) return;
+      if (jump) setPendingSearchJump({ jump, notePath });
+
+      const existingTab = tabStateRef.current.tabs.find(
+        (tab) => tab.kind === "note" && tab.path === notePath,
+      );
+      if (existingTab) {
+        setTabState((current) => ({
+          ...current,
+          activeTabId: existingTab.id,
+        }));
+        return;
+      }
+
+      setError(null);
+      try {
+        const [content, layout] = await Promise.all([
+          vaultApi.openNote(notePath),
+          loadMediaLayout(notePath),
+        ]);
+        const normalizedContent = ensureTitleLineFromPath(notePath, content);
+        mediaLayoutsRef.current.set(notePath, layout);
+        lastSavedContentRef.current.set(notePath, normalizedContent);
+        setTabState((current) => {
+          const nextTab = createNoteTab(notePath, normalizedContent);
+
+          if (current.tabs.some((tab) => tab.kind === "note" && tab.path === notePath)) {
+            const existingNoteTab = current.tabs.find(
+              (tab) => tab.kind === "note" && tab.path === notePath,
+            );
+            return {
+              ...current,
+              activeTabId: existingNoteTab?.id ?? current.activeTabId,
+            };
+          }
+
+          return {
+            activeTabId: nextTab.id,
+            tabs: [...current.tabs, nextTab],
+          };
+        });
+      } catch (openError: unknown) {
+        setError(openError instanceof Error ? openError.message : String(openError));
+      }
+    },
+    [loadMediaLayout],
+  );
 
   useEffect(() => {
     openMarkdownNoteRef.current = (notePath: string) => {
@@ -612,6 +709,117 @@ function App() {
     },
   });
 
+  const persistMediaLayout = useCallback(
+    (sourceEditor: NonNullable<ReturnType<typeof useEditor>>) => {
+      const activeEditorTab = tabStateRef.current.tabs.find(
+        (tab) => tab.id === tabStateRef.current.activeTabId,
+      );
+      if (activeEditorTab?.kind !== "note") return;
+
+      const layout = collectEditorMediaLayout(sourceEditor);
+      mediaLayoutsRef.current.set(activeEditorTab.path, layout);
+      void vaultApi
+        .saveMediaLayout({ layout, path: activeEditorTab.path })
+        .catch((saveError: unknown) => {
+          setError(saveError instanceof Error ? saveError.message : String(saveError));
+        });
+    },
+    [],
+  );
+
+  const clearMediaActionCloseTimer = useCallback(() => {
+    const timer = mediaActionCloseTimerRef.current;
+    if (!timer) return;
+
+    clearTimeout(timer);
+    mediaActionCloseTimerRef.current = null;
+  }, []);
+
+  const closeMediaActionRailSoon = useCallback(() => {
+    clearMediaActionCloseTimer();
+    mediaActionCloseTimerRef.current = setTimeout(() => {
+      mediaActionCloseTimerRef.current = null;
+      if (!mediaActionRailHoveredRef.current) setMediaActionTarget(null);
+    }, 120);
+  }, [clearMediaActionCloseTimer]);
+
+  const handleMediaAction = useCallback(
+    (action: MediaAction) => {
+      if (!editor || !mediaActionTarget) return;
+
+      if (action === "edit") {
+        const nextTarget = window.prompt("Media path", mediaActionTarget.target)?.trim();
+        if (!nextTarget || nextTarget === mediaActionTarget.target) return;
+        if (updateEditorMediaPath(editor, mediaActionTarget.position, nextTarget)) {
+          persistMediaLayout(editor);
+          setMediaActionTarget(null);
+        }
+        return;
+      }
+
+      if (action === "reset") {
+        if (resetEditorMediaSize(editor, mediaActionTarget.position)) {
+          persistMediaLayout(editor);
+          setMediaActionTarget((current) =>
+            current?.position === mediaActionTarget.position
+              ? { ...current, width: null }
+              : current,
+          );
+        }
+        return;
+      }
+
+      if (deleteEditorMedia(editor, mediaActionTarget.position)) {
+        persistMediaLayout(editor);
+        setMediaActionTarget(null);
+      }
+    },
+    [editor, mediaActionTarget, persistMediaLayout],
+  );
+
+  useEffect(() => {
+    if (!editor) return;
+
+    setMediaLayoutCommitHandler((sourceEditor) => {
+      if (sourceEditor !== editor) return;
+      persistMediaLayout(sourceEditor);
+    });
+
+    return () => setMediaLayoutCommitHandler(null);
+  }, [editor, persistMediaLayout]);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const editorElement = editor.view.dom;
+
+    function handleMediaTarget(event: Event) {
+      const detail = (event as CustomEvent<MediaActionTargetDetail>).detail;
+      if (!detail) return;
+
+      clearMediaActionCloseTimer();
+      setMediaActionTarget(detail);
+    }
+
+    function handleMediaLeave() {
+      closeMediaActionRailSoon();
+    }
+
+    function handleEditorScroll() {
+      setMediaActionTarget(null);
+    }
+
+    editorElement.addEventListener(MEDIA_ACTION_TARGET_EVENT, handleMediaTarget);
+    editorElement.addEventListener(MEDIA_ACTION_LEAVE_EVENT, handleMediaLeave);
+    editorPaneRef.current?.addEventListener("scroll", handleEditorScroll);
+
+    return () => {
+      editorElement.removeEventListener(MEDIA_ACTION_TARGET_EVENT, handleMediaTarget);
+      editorElement.removeEventListener(MEDIA_ACTION_LEAVE_EVENT, handleMediaLeave);
+      editorPaneRef.current?.removeEventListener("scroll", handleEditorScroll);
+    };
+  }, [clearMediaActionCloseTimer, closeMediaActionRailSoon, editor]);
+
   useEffect(() => {
     if (mode !== "editor") return;
 
@@ -754,12 +962,47 @@ function App() {
         emitUpdate: false,
       });
     }
+    applyMediaLayoutToEditor(
+      editor,
+      activeTab.kind === "note"
+        ? (mediaLayoutsRef.current.get(activeTab.path) ?? createEmptyMediaLayout())
+        : createEmptyMediaLayout(),
+    );
     queueMicrotask(() => {
       applyingEditorContentRef.current = false;
       editor.commands.focus("start");
       editorPaneRef.current?.scrollTo({ left: 0, top: 0 });
     });
   }, [mode, activeTab?.id, editor]);
+
+  useEffect(() => {
+    if (mode !== "editor") return;
+    if (!editor || activeTab?.kind !== "note") return;
+    if (mediaLayoutsRef.current.has(activeTab.path)) return;
+
+    let active = true;
+    void loadMediaLayout(activeTab.path)
+      .then((layout) => {
+        if (!active) return;
+        const currentTab = tabStateRef.current.tabs.find(
+          (tab) => tab.id === tabStateRef.current.activeTabId,
+        );
+        if (currentTab?.kind !== "note" || currentTab.path !== activeTab.path) return;
+        applyMediaLayoutToEditor(editor, layout);
+      })
+      .catch((layoutError: unknown) => {
+        if (!active) return;
+        setError(layoutError instanceof Error ? layoutError.message : String(layoutError));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [mode, editor, activeTab, loadMediaLayout]);
+
+  useEffect(() => {
+    setMediaActionTarget(null);
+  }, [activeTab?.id]);
 
   useEffect(() => {
     if (!editor || !activeTab || activeTab.kind !== "note" || !pendingSearchJump) return;
@@ -892,6 +1135,19 @@ function App() {
       <div
         className="fixed inset-x-0 top-0 z-30 h-10 [-webkit-app-region:drag] [app-region:drag]"
         aria-hidden="true"
+      />
+
+      <MediaActionRail
+        target={mediaActionTarget}
+        onAction={handleMediaAction}
+        onPointerEnter={() => {
+          mediaActionRailHoveredRef.current = true;
+          clearMediaActionCloseTimer();
+        }}
+        onPointerLeave={() => {
+          mediaActionRailHoveredRef.current = false;
+          closeMediaActionRailSoon();
+        }}
       />
 
       <div className="absolute inset-0 flex min-w-0">

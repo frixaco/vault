@@ -2,7 +2,7 @@
 
 TODO:
 
-- [ ] Editor media: resize image/video rectangles inline
+- [x] Editor media: resize image/video rectangles inline
 - [ ] Editor media: left/center/right magnetic alignment with clean gutter controls
 - [ ] Editor media: edit media URL/path from the gutter control rail
 - [ ] Editor media: reversible delete from note and media file

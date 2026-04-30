@@ -1,8 +1,10 @@
 import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
+import { MediaLayoutService } from "./media-layout-service.js";
 import { VaultMediaResolver } from "./media-resolver.js";
 import { isMediaPath } from "./media-types.js";
 import { NoteFileService } from "./note-file-service.js";
+import type { MediaLayoutFile } from "./media-layout.js";
 import type {
   NoteContentSearchResponse,
   NoteSearchResponse,
@@ -26,6 +28,7 @@ export interface OpenVaultResult {
 }
 
 type ActiveVault = {
+  mediaLayout: MediaLayoutService;
   mediaResolver: VaultMediaResolver;
   noteFiles: NoteFileService;
   noteSearch: VaultSharedNoteSearch;
@@ -70,6 +73,11 @@ export class VaultSession {
       resolveNoteFile: (notePath) => noteFiles.resolveNoteFile(notePath),
       vaultAssetsRoot,
     });
+    const mediaLayout = new MediaLayoutService({
+      notesRoot: vaultPath,
+      resolveNoteFile: (notePath) => noteFiles.resolveNoteFile(notePath),
+      vaultAssetsRoot,
+    });
     const stopEvents = this.options.wireNoteEvents(noteFiles);
 
     try {
@@ -82,6 +90,7 @@ export class VaultSession {
 
     await this.close();
     this.activeVault = {
+      mediaLayout,
       mediaResolver,
       noteFiles,
       noteSearch,
@@ -131,6 +140,14 @@ export class VaultSession {
 
   writeNote(notePath: string, content: string) {
     return this.requireActiveVault().noteFiles.writeNote(notePath, content);
+  }
+
+  readMediaLayout(notePath: string) {
+    return this.requireActiveVault().mediaLayout.readMediaLayout(notePath);
+  }
+
+  writeMediaLayout(notePath: string, layout: MediaLayoutFile) {
+    return this.requireActiveVault().mediaLayout.writeMediaLayout(notePath, layout);
   }
 
   setOpenNotePaths(paths: string[]) {

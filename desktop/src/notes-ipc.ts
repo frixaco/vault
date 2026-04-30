@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises";
 import { clipboard, ipcMain, shell } from "electron";
+import type { MediaLayoutFile } from "./media-layout.js";
 import type { NoteFileService } from "./note-file-service.js";
 import type {
   NoteContentSearchResponse,
@@ -20,7 +21,10 @@ type NoteFileProvider = Pick<
   | "resolveNoteFile"
   | "setOpenNotePaths"
   | "writeNote"
->;
+> & {
+  readMediaLayout: (notePath: string) => Promise<MediaLayoutFile>;
+  writeMediaLayout: (notePath: string, layout: MediaLayoutFile) => Promise<void>;
+};
 
 type TitleSearchProvider = {
   searchTitles: (query: string) => NoteTitleSearchResponse | Promise<NoteTitleSearchResponse>;
@@ -51,6 +55,14 @@ export function registerNoteIpcHandlers({
   ipcMain.handle("notes:delete", (_, payload) => noteFiles.deleteNote(payload));
   ipcMain.handle("notes:move", (_, payload) => moveNote(noteFiles, payload));
   ipcMain.handle("notes:open", (_, notePath: string) => noteFiles.readNote(notePath));
+  ipcMain.handle("notes:media-layout", (_, notePath: string) =>
+    noteFiles.readMediaLayout(notePath),
+  );
+  ipcMain.handle(
+    "notes:save-media-layout",
+    (_, payload: { layout: MediaLayoutFile; path: string }) =>
+      noteFiles.writeMediaLayout(payload.path, payload.layout),
+  );
   ipcMain.handle("notes:copy-path", (_, payload) => copyNotePath(noteFiles, payload));
   ipcMain.handle("notes:reveal", (_, payload) => revealNote(noteFiles, payload));
   ipcMain.handle("notes:save", (_, payload: { content: string; path: string }) =>

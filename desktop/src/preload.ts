@@ -51,11 +51,17 @@ contextBridge.exposeInMainWorld("vault", {
   listNoteMeta: () => ipcRenderer.invoke("notes:list-meta") as ReturnType<VaultApi["listNoteMeta"]>,
   moveNote: (payload: { destinationPath: string; isFolder: boolean; sourcePath: string }) =>
     ipcRenderer.invoke("notes:move", payload) as Promise<void>,
+  openMediaLayout: (path: string) =>
+    ipcRenderer.invoke("notes:media-layout", path) as ReturnType<VaultApi["openMediaLayout"]>,
   openNote: (path: string) => ipcRenderer.invoke("notes:open", path) as Promise<string>,
   revealNote: (payload: { isFolder: boolean; sourcePath: string }) =>
     ipcRenderer.invoke("notes:reveal", payload) as ReturnType<VaultApi["revealNote"]>,
   saveNote: (payload: { content: string; path: string }) =>
     ipcRenderer.invoke("notes:save", payload) as ReturnType<VaultApi["saveNote"]>,
+  saveMediaLayout: (payload) =>
+    ipcRenderer.invoke("notes:save-media-layout", payload) as ReturnType<
+      VaultApi["saveMediaLayout"]
+    >,
   openVault: (payload: { path: string }) =>
     ipcRenderer.invoke("vault:open", payload) as ReturnType<VaultApi["openVault"]>,
   setOpenNotePaths: (payload: { paths: string[] }) =>
