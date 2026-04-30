@@ -890,11 +890,11 @@ function App() {
   return (
     <main className="relative h-full overflow-hidden bg-bg">
       <div
-        className="fixed inset-x-0 top-0 z-10 h-10 [-webkit-app-region:drag] [app-region:drag]"
+        className="fixed inset-x-0 top-0 z-30 h-10 [-webkit-app-region:drag] [app-region:drag]"
         aria-hidden="true"
       />
 
-      <div className="absolute inset-x-0 top-10 bottom-0 flex min-w-0">
+      <div className="absolute inset-0 flex min-w-0">
         <aside
           className={`sidebar-panel z-20 flex h-full ${sidebarOpen ? "w-sidebar" : "w-0"} border-r border-hairline-strong bg-bg-raised`}
           data-open={sidebarOpen}
@@ -903,7 +903,7 @@ function App() {
         >
           <section className="w-0 overflow-hidden" aria-label="Workspace actions" />
           <section
-            className="sidebar-panel-content flex min-w-0 flex-1 flex-col pt-2 pb-2"
+            className="sidebar-panel-content flex min-w-0 flex-1 flex-col pt-12 pb-2"
             aria-label="Note list"
           >
             <header className="sidebar-header">
@@ -941,7 +941,7 @@ function App() {
           </section>
         </aside>
 
-        <section className="relative flex min-w-0 flex-1 flex-col">
+        <section className="relative flex min-w-0 flex-1 flex-col pt-10">
           <section
             className="flex min-w-0 flex-1 justify-center overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
             ref={editorPaneRef}
