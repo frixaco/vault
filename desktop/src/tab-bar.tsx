@@ -20,7 +20,7 @@ export function TabBar({
 }) {
   return (
     <nav
-      className="editor-width pointer-events-none fixed bottom-0 left-1/2 z-10 flex h-tabbar -translate-x-1/2 items-center justify-center overflow-x-auto bg-transparent [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="editor-width pointer-events-none z-10 flex h-tabbar flex-none items-center justify-center overflow-x-auto bg-transparent [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       aria-label="Open notes"
     >
       {tabs.map((tab, index) => (

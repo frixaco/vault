@@ -427,33 +427,30 @@ input {
 }
 
 .sidebar-panel {
-  pointer-events: none;
-  transform: translateX(-100%);
-  transition: transform 165ms var(--ease-sidebar);
-  will-change: transform;
+  overflow: hidden;
+  transition:
+    width 165ms var(--ease-sidebar),
+    border-color 165ms var(--ease-sidebar);
+  will-change: width;
 }
 
-.sidebar-panel[data-open="true"] {
-  pointer-events: auto;
-  transform: translateX(0);
+.sidebar-panel[data-open="false"] {
+  pointer-events: none;
+  border-color: transparent;
 }
 
 .sidebar-panel-content {
-  transform: translateX(-4px);
-  transition: transform 165ms var(--ease-sidebar);
+  transition: opacity 120ms var(--ease-sidebar);
 }
 
-.sidebar-panel[data-open="true"] .sidebar-panel-content {
-  transform: translateX(0);
-  transition-delay: 18ms;
+.sidebar-panel[data-open="false"] .sidebar-panel-content {
+  opacity: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar-panel,
   .sidebar-panel-content {
-    transform: none;
     transition-duration: 60ms;
-    transition-delay: 0s;
   }
 }
 

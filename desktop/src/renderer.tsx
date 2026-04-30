@@ -676,55 +676,61 @@ function App() {
         aria-hidden="true"
       />
 
-      <section
-        className="fixed inset-x-0 top-10 bottom-tabbar flex min-w-0 justify-center overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
-        ref={editorPaneRef}
-      >
-        <EditorContent className="editor-width min-h-full" editor={editor} />
-      </section>
-
-      <aside
-        className="sidebar-panel fixed inset-y-0 left-0 z-20 flex w-sidebar border-r border-hairline-strong bg-bg-raised pt-4"
-        data-open={sidebarOpen}
-        aria-label="Notes"
-        aria-hidden={!sidebarOpen}
-      >
-        <section className="w-0 overflow-hidden" aria-label="Workspace actions" />
-        <section
-          className="sidebar-panel-content flex min-w-0 flex-1 flex-col pt-8 pb-2"
-          aria-label="Note list"
+      <div className="absolute inset-x-0 top-10 bottom-0 flex min-w-0">
+        <aside
+          className={`sidebar-panel z-20 flex h-full ${sidebarOpen ? "w-sidebar" : "w-0"} border-r border-hairline-strong bg-bg-raised`}
+          data-open={sidebarOpen}
+          aria-label="Notes"
+          aria-hidden={!sidebarOpen}
         >
-          {error ? (
-            <div className="px-2 pb-2">
-              <div className="border border-hairline-strong bg-accent/10 px-2.5 py-2 font-vault-chrome text-[11px] text-accent">
-                {error}
+          <section className="w-0 overflow-hidden" aria-label="Workspace actions" />
+          <section
+            className="sidebar-panel-content flex min-w-0 flex-1 flex-col pt-2 pb-2"
+            aria-label="Note list"
+          >
+            {error ? (
+              <div className="px-2 pb-2">
+                <div className="border border-hairline-strong bg-accent/10 px-2.5 py-2 font-vault-chrome text-[11px] text-accent">
+                  {error}
+                </div>
               </div>
-            </div>
-          ) : null}
-          <FileTreeFeature
-            notes={notes}
-            onError={setError}
-            onMove={(sourcePath, destinationPath, isFolder) => {
-              void persistNoteMove(sourcePath, destinationPath, isFolder);
-            }}
-            onOpenNote={(notePath) => openMarkdownNoteRef.current(notePath)}
-          />
-        </section>
-      </aside>
+            ) : null}
+            <FileTreeFeature
+              notes={notes}
+              onError={setError}
+              onMove={(sourcePath, destinationPath, isFolder) => {
+                void persistNoteMove(sourcePath, destinationPath, isFolder);
+              }}
+              onOpenNote={(notePath) => openMarkdownNoteRef.current(notePath)}
+            />
+          </section>
+        </aside>
 
-      <TabBar
-        activeTabId={tabState.activeTabId}
-        onActivateTab={(id) =>
-          setTabState((current) => ({
-            ...current,
-            activeTabId: id,
-          }))
-        }
-        onCloseTab={closeTab}
-        onTabContextMenu={handleTabContextMenu}
-        onTabMouseDown={handleTabMouseDown}
-        tabs={tabState.tabs}
-      />
+        <section className="relative flex min-w-0 flex-1 flex-col">
+          <section
+            className="flex min-w-0 flex-1 justify-center overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
+            ref={editorPaneRef}
+          >
+            <EditorContent className="editor-width min-h-full" editor={editor} />
+          </section>
+
+          <div className="flex flex-none justify-center">
+            <TabBar
+              activeTabId={tabState.activeTabId}
+              onActivateTab={(id) =>
+                setTabState((current) => ({
+                  ...current,
+                  activeTabId: id,
+                }))
+              }
+              onCloseTab={closeTab}
+              onTabContextMenu={handleTabContextMenu}
+              onTabMouseDown={handleTabMouseDown}
+              tabs={tabState.tabs}
+            />
+          </div>
+        </section>
+      </div>
 
       {paletteOpen ? (
         <CommandPalette
