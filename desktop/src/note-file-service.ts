@@ -1,6 +1,7 @@
 import { mkdir, opendir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import watcher from "@parcel/watcher";
+import { shell } from "electron";
 import type { NoteMeta, NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
 import {
   isMarkdownFile,
@@ -176,6 +177,18 @@ export class NoteFileService {
     await mkdir(path.dirname(destinationFilePath), { recursive: true });
     await rename(sourceFilePath, destinationFilePath);
     this.applyMovedPath(sourcePath, destinationPath, payload.isFolder);
+  }
+
+  async deleteNote(payload: { isFolder: boolean; sourcePath: string }) {
+    const sourcePath = normalizeNotePath(payload.sourcePath);
+    if (!sourcePath) return;
+
+    const sourceFilePath = payload.isFolder
+      ? this.resolveNoteDirectory(sourcePath)
+      : this.resolveNoteFile(sourcePath);
+
+    await shell.trashItem(sourceFilePath);
+    this.applyDeletedPath(sourcePath, payload.isFolder);
   }
 
   resolveNoteFile(notePath: string) {
@@ -452,6 +465,19 @@ export class NoteFileService {
     }
 
     this.emitTreePatch({ added, removed, updated: [] });
+  }
+
+  private applyDeletedPath(sourcePath: string, isFolder: boolean) {
+    if (!isFolder) {
+      if (!this.notes.delete(sourcePath)) return;
+      this.emitNoteDeleted(sourcePath);
+      this.emitTreePatch({ added: [], removed: [sourcePath], updated: [] });
+      return;
+    }
+
+    const removed = this.removeNotesUnderDirectory(this.resolveNoteDirectory(sourcePath));
+    for (const notePath of removed) this.emitNoteDeleted(notePath);
+    this.emitTreePatch({ added: [], removed, updated: [] });
   }
 
   private async readNoteMeta(filePath: string) {

@@ -121,6 +121,10 @@ export class VaultSession {
     return this.requireActiveVault().noteFiles.moveNote(payload);
   }
 
+  deleteNote(payload: { isFolder: boolean; sourcePath: string }) {
+    return this.requireActiveVault().noteFiles.deleteNote(payload);
+  }
+
   readNote(notePath: string) {
     return this.requireActiveVault().noteFiles.readNote(notePath);
   }

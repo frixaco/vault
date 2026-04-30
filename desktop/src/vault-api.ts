@@ -13,7 +13,9 @@ export type TabMenuAction = "close" | "close-others" | "close-right" | null;
 export type VaultApi = {
   chooseVaultDirectory: () => Promise<VaultDirectorySummary | null>;
   closeWindow: () => Promise<void>;
+  copyNotePath: (payload: { isFolder: boolean; sourcePath: string }) => Promise<string>;
   createNote: (payload: { content: string }) => Promise<{ content: string; path: string }>;
+  deleteNote: (payload: { isFolder: boolean; sourcePath: string }) => Promise<void>;
   inspectVaultDirectory: (path: string) => Promise<VaultDirectorySummary>;
   listNoteMeta: () => Promise<NoteMeta[]>;
   listNotes: () => Promise<string[]>;
@@ -29,6 +31,7 @@ export type VaultApi = {
   onOpenNoteUpdated: (callback: (event: OpenNoteUpdatedEvent) => void) => () => void;
   openNote: (path: string) => Promise<string>;
   openPopup: (url: string) => Promise<void>;
+  revealNote: (payload: { isFolder: boolean; sourcePath: string }) => Promise<void>;
   openTabMenu: (payload: { hasOthers: boolean; hasRight: boolean }) => Promise<TabMenuAction>;
   openVault: (payload: { path: string }) => Promise<OpenVaultResult>;
   searchNoteContent: (payload: { query: string }) => Promise<NoteContentSearchResponse>;

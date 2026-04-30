@@ -523,6 +523,33 @@ function App() {
     [refreshNotes, updateOpenNotePaths],
   );
 
+  const deleteSidebarItem = useCallback(async (sourcePath: string, isFolder: boolean) => {
+    setError(null);
+    try {
+      await vaultApi.deleteNote({ isFolder, sourcePath: stripTreeDirectory(sourcePath) });
+    } catch (deleteError: unknown) {
+      setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+    }
+  }, []);
+
+  const copySidebarItemPath = useCallback(async (sourcePath: string, isFolder: boolean) => {
+    setError(null);
+    try {
+      await vaultApi.copyNotePath({ isFolder, sourcePath: stripTreeDirectory(sourcePath) });
+    } catch (copyError: unknown) {
+      setError(copyError instanceof Error ? copyError.message : String(copyError));
+    }
+  }, []);
+
+  const revealSidebarItem = useCallback(async (sourcePath: string, isFolder: boolean) => {
+    setError(null);
+    try {
+      await vaultApi.revealNote({ isFolder, sourcePath: stripTreeDirectory(sourcePath) });
+    } catch (revealError: unknown) {
+      setError(revealError instanceof Error ? revealError.message : String(revealError));
+    }
+  }, []);
+
   const editor = useEditor({
     autofocus: true,
     content: {
@@ -895,11 +922,20 @@ function App() {
               isSidebarOpen={sidebarOpen}
               noteMetaByPath={noteMetaByPath}
               notes={notes}
+              onCopyPath={(sourcePath, isFolder) => {
+                void copySidebarItemPath(sourcePath, isFolder);
+              }}
+              onDelete={(sourcePath, isFolder) => {
+                void deleteSidebarItem(sourcePath, isFolder);
+              }}
               onError={setError}
               onMove={(sourcePath, destinationPath, isFolder) => {
                 void persistNoteMove(sourcePath, destinationPath, isFolder);
               }}
               onOpenNote={(notePath) => openMarkdownNoteRef.current(notePath)}
+              onReveal={(sourcePath, isFolder) => {
+                void revealSidebarItem(sourcePath, isFolder);
+              }}
               sortMode={sidebarSortMode}
             />
           </section>

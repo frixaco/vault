@@ -9,8 +9,12 @@ contextBridge.exposeInMainWorld("vault", {
     ipcRenderer.invoke("vault:choose-directory") as ReturnType<VaultApi["chooseVaultDirectory"]>,
   migrateAttachments: () =>
     ipcRenderer.invoke("attachments:migrate") as ReturnType<VaultApi["migrateAttachments"]>,
+  copyNotePath: (payload: { isFolder: boolean; sourcePath: string }) =>
+    ipcRenderer.invoke("notes:copy-path", payload) as ReturnType<VaultApi["copyNotePath"]>,
   createNote: (payload: { content: string }) =>
     ipcRenderer.invoke("notes:create", payload) as ReturnType<VaultApi["createNote"]>,
+  deleteNote: (payload: { isFolder: boolean; sourcePath: string }) =>
+    ipcRenderer.invoke("notes:delete", payload) as ReturnType<VaultApi["deleteNote"]>,
   inspectVaultDirectory: (path: string) =>
     ipcRenderer.invoke("vault:inspect-directory", path) as ReturnType<
       VaultApi["inspectVaultDirectory"]
@@ -48,6 +52,8 @@ contextBridge.exposeInMainWorld("vault", {
   moveNote: (payload: { destinationPath: string; isFolder: boolean; sourcePath: string }) =>
     ipcRenderer.invoke("notes:move", payload) as Promise<void>,
   openNote: (path: string) => ipcRenderer.invoke("notes:open", path) as Promise<string>,
+  revealNote: (payload: { isFolder: boolean; sourcePath: string }) =>
+    ipcRenderer.invoke("notes:reveal", payload) as ReturnType<VaultApi["revealNote"]>,
   saveNote: (payload: { content: string; path: string }) =>
     ipcRenderer.invoke("notes:save", payload) as ReturnType<VaultApi["saveNote"]>,
   openVault: (payload: { path: string }) =>

@@ -574,7 +574,7 @@ input {
 }
 
 .sidebar-tree-menu {
-  min-width: 104px;
+  min-width: max-content;
   padding: 4px;
   border: var(--hairline-w) solid var(--hairline-strong);
   background: var(--bg-raised);
@@ -591,11 +591,20 @@ input {
   font-size: 11px;
   line-height: 1.2;
   text-align: left;
+  white-space: nowrap;
 }
 
 .sidebar-tree-menu button:hover {
   background: var(--hover);
   color: var(--fg);
+}
+
+.sidebar-tree-menu button[data-variant="danger"] {
+  color: var(--accent);
+}
+
+.sidebar-tree-menu button[data-variant="danger"]:hover {
+  color: var(--accent);
 }
 
 @keyframes palette-fade {

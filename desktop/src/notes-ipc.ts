@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { ipcMain } from "electron";
+import { clipboard, ipcMain, shell } from "electron";
 import type { NoteFileService } from "./note-file-service.js";
 import type {
   NoteContentSearchResponse,
@@ -11,6 +11,7 @@ import type {
 type NoteFileProvider = Pick<
   NoteFileService,
   | "createNote"
+  | "deleteNote"
   | "listNoteMeta"
   | "listNotePaths"
   | "moveNote"
@@ -47,8 +48,11 @@ export function registerNoteIpcHandlers({
   ipcMain.handle("notes:create", (_, payload: { content: string }) =>
     noteFiles.createNote(payload.content),
   );
+  ipcMain.handle("notes:delete", (_, payload) => noteFiles.deleteNote(payload));
   ipcMain.handle("notes:move", (_, payload) => moveNote(noteFiles, payload));
   ipcMain.handle("notes:open", (_, notePath: string) => noteFiles.readNote(notePath));
+  ipcMain.handle("notes:copy-path", (_, payload) => copyNotePath(noteFiles, payload));
+  ipcMain.handle("notes:reveal", (_, payload) => revealNote(noteFiles, payload));
   ipcMain.handle("notes:save", (_, payload: { content: string; path: string }) =>
     noteFiles.writeNote(payload.path, payload.content),
   );
@@ -84,6 +88,40 @@ async function moveNote(
   }
 
   await noteFiles.moveNote(payload);
+}
+
+async function copyNotePath(
+  noteFiles: NoteFileProvider,
+  payload: { isFolder: boolean; sourcePath: string },
+) {
+  const absolutePath = getNoteFileSystemPath(noteFiles, payload);
+  if (!(await pathExists(absolutePath))) {
+    throw new Error(`Path does not exist: "${payload.sourcePath}"`);
+  }
+
+  clipboard.writeText(absolutePath);
+  return absolutePath;
+}
+
+async function revealNote(
+  noteFiles: NoteFileProvider,
+  payload: { isFolder: boolean; sourcePath: string },
+) {
+  const absolutePath = getNoteFileSystemPath(noteFiles, payload);
+  if (!(await pathExists(absolutePath))) {
+    throw new Error(`Path does not exist: "${payload.sourcePath}"`);
+  }
+
+  shell.showItemInFolder(absolutePath);
+}
+
+function getNoteFileSystemPath(
+  noteFiles: NoteFileProvider,
+  payload: { isFolder: boolean; sourcePath: string },
+) {
+  return payload.isFolder
+    ? noteFiles.resolveNoteDirectory(payload.sourcePath)
+    : noteFiles.resolveNoteFile(payload.sourcePath);
 }
 
 async function pathExists(filePath: string) {

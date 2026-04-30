@@ -16,18 +16,24 @@ export function FileTreeFeature({
   isSidebarOpen,
   noteMetaByPath,
   notes,
+  onCopyPath,
+  onDelete,
   onError,
   onMove,
   onOpenNote,
+  onReveal,
   sortMode,
 }: {
   activeNotePath: string | null;
   isSidebarOpen: boolean;
   noteMetaByPath: Readonly<Record<string, NoteMeta>>;
   notes: string[];
+  onCopyPath: (sourcePath: string, isFolder: boolean) => void;
+  onDelete: (sourcePath: string, isFolder: boolean) => void;
   onError: (message: string) => void;
   onMove: (sourcePath: string, destinationPath: string, isFolder: boolean) => void;
   onOpenNote: (notePath: string) => void;
+  onReveal: (sourcePath: string, isFolder: boolean) => void;
   sortMode: SidebarSortMode;
 }) {
   const modelHostRef = useRef<HTMLDivElement | null>(null);
@@ -134,19 +140,50 @@ export function FileTreeFeature({
       <FileTree
         className="sidebar-tree"
         model={model}
-        renderContextMenu={(item, context) => (
-          <div className="sidebar-tree-menu">
-            <button
-              type="button"
-              onClick={() => {
-                context.close({ restoreFocus: false });
-                model.startRenaming(item.path);
-              }}
-            >
-              Rename
-            </button>
-          </div>
-        )}
+        renderContextMenu={(item, context) => {
+          const isFolder = item.path.endsWith("/");
+          return (
+            <div className="sidebar-tree-menu">
+              <button
+                type="button"
+                onClick={() => {
+                  context.close({ restoreFocus: false });
+                  model.startRenaming(item.path);
+                }}
+              >
+                Rename
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  context.close({ restoreFocus: true });
+                  onCopyPath(item.path, isFolder);
+                }}
+              >
+                Copy path
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  context.close({ restoreFocus: true });
+                  onReveal(item.path, isFolder);
+                }}
+              >
+                Reveal in Finder
+              </button>
+              <button
+                type="button"
+                data-variant="danger"
+                onClick={() => {
+                  context.close({ restoreFocus: true });
+                  onDelete(item.path, isFolder);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          );
+        }}
       />
     </div>
   );
