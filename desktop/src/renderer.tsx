@@ -14,6 +14,8 @@ import { createDraftTab, createInitialTabState, createNoteTab, ensureOpenTab } f
 import type { EditorTab } from "./tabs.js";
 import type { NotesTreePatchEvent } from "./note-events.js";
 import type { NoteSearchResult, SearchJump } from "./search-types.js";
+import { VaultSelectionScreen } from "./vault-selection-screen.js";
+import type { OpenVaultResult } from "./vault-session.js";
 
 function isBlankMarkdown(content: string) {
   return (
@@ -99,10 +101,11 @@ function applyNotesTreePatch(currentNotes: string[], patch: NotesTreePatchEvent)
 }
 
 function App() {
+  const [mode, setMode] = useState<"select-vault" | "editor">("select-vault");
   const [notes, setNotes] = useState<string[]>([]);
   const [, setStatus] = useState("Loading…");
   const [error, setError] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingSearchJump, setPendingSearchJump] = useState<PendingSearchJump | null>(null);
@@ -134,8 +137,19 @@ function App() {
   }, [notes]);
 
   useEffect(() => {
+    if (mode !== "editor") return;
     void vaultApi.setOpenNotePaths({ paths: openNotePaths }).catch(() => {});
-  }, [openNotePathsKey]);
+  }, [mode, openNotePathsKey]);
+
+  const handleVaultOpened = useCallback((result: OpenVaultResult) => {
+    setNotes(result.notes);
+    setStatus(`${result.notes.length} notes`);
+    setError(null);
+    setSidebarOpen(true);
+    setTabState(createInitialTabState());
+    lastSavedContentRef.current.clear();
+    setMode("editor");
+  }, []);
 
   function closeTab(id: string) {
     setTabState((current) => {
@@ -260,10 +274,12 @@ function App() {
   }, [openMarkdownNote]);
 
   const refreshNotes = useCallback(async () => {
+    if (mode !== "editor") return;
+
     const files = await vaultApi.listNotes();
     setNotes(files);
     setStatus(`${files.length} notes`);
-  }, []);
+  }, [mode]);
 
   const updateOpenNotePaths = useCallback(
     (sourcePath: string, destinationPath: string, isFolder: boolean) => {
@@ -391,6 +407,8 @@ function App() {
   });
 
   useEffect(() => {
+    if (mode !== "editor") return;
+
     const liveTabIds = new Set(tabState.tabs.map((tab) => tab.id));
     for (const [tabId, timer] of autosaveTimersRef.current) {
       if (!liveTabIds.has(tabId)) {
@@ -498,7 +516,7 @@ function App() {
 
       autosaveTimersRef.current.set(tab.id, timer);
     }
-  }, [tabState.tabs]);
+  }, [mode, tabState.tabs]);
 
   useEffect(() => {
     return () => {
@@ -508,6 +526,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (mode !== "editor") return;
     if (!editor || !activeTab) return;
 
     applyingEditorContentRef.current = true;
@@ -525,7 +544,7 @@ function App() {
       editor.commands.focus("start");
       editorPaneRef.current?.scrollTo({ left: 0, top: 0 });
     });
-  }, [activeTab?.id, editor]);
+  }, [mode, activeTab?.id, editor]);
 
   useEffect(() => {
     if (!editor || !activeTab || activeTab.kind !== "note" || !pendingSearchJump) return;
@@ -538,6 +557,8 @@ function App() {
   }, [activeTab, editor, pendingSearchJump]);
 
   useEffect(() => {
+    if (mode !== "editor") return;
+
     let active = true;
     refreshNotes()
       .then(() => {
@@ -551,9 +572,11 @@ function App() {
     return () => {
       active = false;
     };
-  }, [refreshNotes]);
+  }, [mode, refreshNotes]);
 
   useEffect(() => {
+    if (mode !== "editor") return;
+
     function applyOpenNoteContent(notePath: string, content: string) {
       const normalizedContent = ensureTitleLineFromPath(notePath, content);
       const activeNote = tabStateRef.current.tabs.find(
@@ -608,10 +631,12 @@ function App() {
       unsubscribeNoteDeleted();
       unsubscribeError();
     };
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
+      if (mode !== "editor") return;
+
       const mod = event.metaKey || event.ctrlKey;
       if (mod && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -638,7 +663,11 @@ function App() {
     }
     window.addEventListener("keydown", handleKey, true);
     return () => window.removeEventListener("keydown", handleKey, true);
-  }, [sidebarOpen, activeTab, openNewDraftNote]);
+  }, [mode, sidebarOpen, activeTab, openNewDraftNote]);
+
+  if (mode === "select-vault") {
+    return <VaultSelectionScreen onOpenVault={handleVaultOpened} />;
+  }
 
   return (
     <main className="relative h-full overflow-hidden bg-bg">

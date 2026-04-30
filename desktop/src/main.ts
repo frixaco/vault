@@ -1,33 +1,21 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, protocol } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, protocol } from "electron";
 import { ExternalLinkPopupService } from "./link-popup-service.js";
 import { openTabMenu } from "./native-menu-service.js";
 import { wireNoteFileEvents } from "./note-event-broadcaster.js";
 import { registerNoteIpcHandlers } from "./notes-ipc.js";
-import { NoteFileService } from "./note-file-service.js";
-import { VaultMediaResolver } from "./media-resolver.js";
 import { migrateAttachmentsToNoteAssets } from "./media-migration.js";
 import { createVaultMediaProtocolHandler, registerVaultMediaScheme } from "./media-protocol.js";
-import { VaultSharedNoteSearch } from "./vault-shared-search.js";
+import { VaultSession } from "./vault-session.js";
 import { createMainWindow } from "./window-manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const appRoot = path.join(__dirname, "..");
-const notesRoot = path.join(appRoot, "example-notes");
-const vaultDataRoot = path.join(notesRoot, ".vault");
-const vaultAssetsRoot = path.join(vaultDataRoot, "assets");
-const noteFiles = new NoteFileService({
+const vaultSession = new VaultSession({
   ignoredDirectoryNames: [".vault"],
-  notesRoot,
+  wireNoteEvents: wireNoteFileEvents,
 });
-const noteSearch = new VaultSharedNoteSearch(notesRoot, vaultDataRoot);
 const linkPopupService = new ExternalLinkPopupService();
-const mediaResolver = new VaultMediaResolver({
-  notesRoot,
-  resolveNoteFile: (notePath) => noteFiles.resolveNoteFile(notePath),
-  vaultAssetsRoot,
-});
 registerVaultMediaScheme();
 
 function createWindow() {
@@ -40,7 +28,9 @@ function createWindow() {
 }
 
 function migrateAttachments() {
-  return migrateAttachmentsToNoteAssets({ notesRoot });
+  const vaultPath = vaultSession.getActivePath();
+  if (!vaultPath) throw new Error("No vault is open");
+  return migrateAttachmentsToNoteAssets({ notesRoot: vaultPath });
 }
 
 function closeWindow(event: Electron.IpcMainInvokeEvent) {
@@ -51,13 +41,35 @@ async function openLinkPopup(event: Electron.IpcMainInvokeEvent, rawUrl: string)
   return linkPopupService.open(event, rawUrl);
 }
 
+async function chooseVaultDirectory(event: Electron.IpcMainInvokeEvent) {
+  const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const options: Electron.OpenDialogOptions = {
+    buttonLabel: "Choose",
+    properties: ["openDirectory", "createDirectory", "promptToCreate"],
+    title: "Choose Vault Directory",
+  };
+  const result = window
+    ? await dialog.showOpenDialog(window, options)
+    : await dialog.showOpenDialog(options);
+
+  const directoryPath = result.filePaths[0];
+  if (result.canceled || !directoryPath) return null;
+
+  return vaultSession.inspectDirectory(directoryPath, { create: true });
+}
+
 app.whenReady().then(async () => {
-  protocol.handle("vault-media", createVaultMediaProtocolHandler(mediaResolver));
-  wireNoteFileEvents(noteFiles);
-  await noteFiles.start().catch((error: unknown) => {
-    console.error("Unable to watch notes", error);
+  protocol.handle("vault-media", createVaultMediaProtocolHandler(vaultSession));
+  registerNoteIpcHandlers({
+    contentSearch: vaultSession,
+    noteFiles: vaultSession,
+    titleSearch: vaultSession,
   });
-  registerNoteIpcHandlers({ contentSearch: noteSearch, noteFiles, titleSearch: noteSearch });
+  ipcMain.handle("vault:choose-directory", chooseVaultDirectory);
+  ipcMain.handle("vault:inspect-directory", (_, directoryPath: string) =>
+    vaultSession.inspectDirectory(directoryPath),
+  );
+  ipcMain.handle("vault:open", (_, payload: { path: string }) => vaultSession.open(payload.path));
   ipcMain.handle("attachments:migrate", migrateAttachments);
   ipcMain.handle("links:open-popup", openLinkPopup);
   ipcMain.handle("tabs:menu", (event, payload: { hasOthers: boolean; hasRight: boolean }) =>
@@ -80,6 +92,5 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  void noteFiles.stop();
-  noteSearch.dispose();
+  void vaultSession.close();
 });

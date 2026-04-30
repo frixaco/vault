@@ -2,18 +2,25 @@ import { BrowserWindow } from "electron";
 import type { NoteFileService } from "./note-file-service.js";
 
 export function wireNoteFileEvents(noteFiles: NoteFileService) {
-  noteFiles.onTreePatch((patch) => {
+  const unlistenTreePatch = noteFiles.onTreePatch((patch) => {
     sendToAllWindows("notes:tree-patch", patch);
   });
-  noteFiles.onOpenNoteUpdated((event) => {
+  const unlistenOpenNoteUpdated = noteFiles.onOpenNoteUpdated((event) => {
     sendToAllWindows("notes:open-note-updated", event);
   });
-  noteFiles.onNoteDeleted((notePath) => {
+  const unlistenNoteDeleted = noteFiles.onNoteDeleted((notePath) => {
     sendToAllWindows("notes:note-deleted", notePath);
   });
-  noteFiles.onError((message) => {
+  const unlistenError = noteFiles.onError((message) => {
     sendToAllWindows("notes:watch-error", message);
   });
+
+  return () => {
+    unlistenTreePatch();
+    unlistenOpenNoteUpdated();
+    unlistenNoteDeleted();
+    unlistenError();
+  };
 }
 
 function sendToAllWindows(channel: string, payload: unknown) {

@@ -5,10 +5,16 @@ import type { SearchScope } from "./search-types.js";
 import type { TabMenuAction, VaultApi } from "./vault-api.js";
 
 contextBridge.exposeInMainWorld("vault", {
+  chooseVaultDirectory: () =>
+    ipcRenderer.invoke("vault:choose-directory") as ReturnType<VaultApi["chooseVaultDirectory"]>,
   migrateAttachments: () =>
     ipcRenderer.invoke("attachments:migrate") as ReturnType<VaultApi["migrateAttachments"]>,
   createNote: (payload: { content: string }) =>
     ipcRenderer.invoke("notes:create", payload) as ReturnType<VaultApi["createNote"]>,
+  inspectVaultDirectory: (path: string) =>
+    ipcRenderer.invoke("vault:inspect-directory", path) as ReturnType<
+      VaultApi["inspectVaultDirectory"]
+    >,
   onNotesTreePatch: (callback: (event: NotesTreePatchEvent) => void) => {
     const listener = (_event: IpcRendererEvent, payload: NotesTreePatchEvent) => {
       callback(payload);
@@ -43,6 +49,8 @@ contextBridge.exposeInMainWorld("vault", {
   openNote: (path: string) => ipcRenderer.invoke("notes:open", path) as Promise<string>,
   saveNote: (payload: { content: string; path: string }) =>
     ipcRenderer.invoke("notes:save", payload) as ReturnType<VaultApi["saveNote"]>,
+  openVault: (payload: { path: string }) =>
+    ipcRenderer.invoke("vault:open", payload) as ReturnType<VaultApi["openVault"]>,
   setOpenNotePaths: (payload: { paths: string[] }) =>
     ipcRenderer.invoke("notes:set-open-paths", payload) as Promise<void>,
   openPopup: (url: string) => ipcRenderer.invoke("links:open-popup", url) as Promise<void>,

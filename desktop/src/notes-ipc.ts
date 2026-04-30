@@ -8,6 +8,18 @@ import type {
   SearchScope,
 } from "./search-types.js";
 
+type NoteFileProvider = Pick<
+  NoteFileService,
+  | "createNote"
+  | "listNotePaths"
+  | "moveNote"
+  | "readNote"
+  | "resolveNoteDirectory"
+  | "resolveNoteFile"
+  | "setOpenNotePaths"
+  | "writeNote"
+>;
+
 type TitleSearchProvider = {
   searchTitles: (query: string) => NoteTitleSearchResponse | Promise<NoteTitleSearchResponse>;
 };
@@ -20,7 +32,7 @@ type ContentSearchProvider = {
 
 export type NoteIpcHandlersOptions = {
   contentSearch: ContentSearchProvider;
-  noteFiles: NoteFileService;
+  noteFiles: NoteFileProvider;
   titleSearch: TitleSearchProvider;
 };
 
@@ -56,7 +68,7 @@ export function registerNoteIpcHandlers({
 }
 
 async function moveNote(
-  noteFiles: NoteFileService,
+  noteFiles: NoteFileProvider,
   payload: { destinationPath: string; isFolder: boolean; sourcePath: string },
 ) {
   if (payload.sourcePath === payload.destinationPath) return;

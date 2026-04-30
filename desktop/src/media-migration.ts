@@ -6,11 +6,6 @@ import { fileURLToPath } from "node:url";
 import { isMediaPath } from "./media-types.js";
 import type { AttachmentsMigrationResult } from "./media-types.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const appRoot =
-  path.basename(__dirname) === "src" ? path.dirname(__dirname) : path.join(__dirname, "..");
-const defaultNotesRoot = path.join(appRoot, "example-notes");
-
 interface MigrationOptions {
   dryRun?: boolean;
   notesRoot?: string;
@@ -210,7 +205,11 @@ async function getDestinationPath(
 }
 
 export async function migrateAttachmentsToNoteAssets(options: MigrationOptions = {}) {
-  const notesRoot = options.notesRoot ?? defaultNotesRoot;
+  if (!options.notesRoot) {
+    throw new Error("A notes root is required to migrate attachments");
+  }
+
+  const notesRoot = options.notesRoot;
   const attachmentsDirectory = path.join(notesRoot, "attachments");
   const noteAssetsRoot = path.join(notesRoot, ".vault", "assets");
   const result: AttachmentsMigrationResult = {
@@ -322,6 +321,17 @@ export async function migrateAttachmentsToNoteAssets(options: MigrationOptions =
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const dryRun = process.argv.includes("--dry-run");
-  const result = await migrateAttachmentsToNoteAssets({ dryRun });
+  const notesRoot =
+    getCliOptionValue("--notes-root") ??
+    getCliOptionValue("--vault") ??
+    process.env.VAULT_NOTES_ROOT;
+  const result = await migrateAttachmentsToNoteAssets({ dryRun, notesRoot });
   console.log(JSON.stringify(result, null, 2));
+}
+
+function getCliOptionValue(name: string) {
+  const index = process.argv.indexOf(name);
+  if (index < 0) return null;
+
+  return process.argv[index + 1] ?? null;
 }

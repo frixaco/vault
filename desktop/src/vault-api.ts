@@ -6,12 +6,15 @@ import type {
   NoteTitleSearchResponse,
   SearchScope,
 } from "./search-types.js";
+import type { OpenVaultResult, VaultDirectorySummary } from "./vault-session.js";
 
 export type TabMenuAction = "close" | "close-others" | "close-right" | null;
 
 export type VaultApi = {
+  chooseVaultDirectory: () => Promise<VaultDirectorySummary | null>;
   closeWindow: () => Promise<void>;
   createNote: (payload: { content: string }) => Promise<{ content: string; path: string }>;
+  inspectVaultDirectory: (path: string) => Promise<VaultDirectorySummary>;
   listNotes: () => Promise<string[]>;
   migrateAttachments: () => Promise<AttachmentsMigrationResult>;
   moveNote: (payload: {
@@ -26,6 +29,7 @@ export type VaultApi = {
   openNote: (path: string) => Promise<string>;
   openPopup: (url: string) => Promise<void>;
   openTabMenu: (payload: { hasOthers: boolean; hasRight: boolean }) => Promise<TabMenuAction>;
+  openVault: (payload: { path: string }) => Promise<OpenVaultResult>;
   searchNoteContent: (payload: { query: string }) => Promise<NoteContentSearchResponse>;
   searchNoteTitles: (payload: { query: string }) => Promise<NoteTitleSearchResponse>;
   searchNotes: (payload: { query: string; scope: SearchScope }) => Promise<NoteSearchResponse>;
