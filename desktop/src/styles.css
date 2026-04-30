@@ -447,11 +447,104 @@ input {
   opacity: 0;
 }
 
+.sidebar-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px 4px 10px;
+  font-family: var(--font-chrome);
+}
+
+.sidebar-title {
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-size: 11px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-sort-control {
+  position: relative;
+  flex: none;
+}
+
+.sidebar-icon-button {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: var(--radius-hit);
+  color: var(--fg-faint);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.sidebar-icon-button:hover,
+.sidebar-icon-button[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.sidebar-sort-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 150px;
+  padding: 4px;
+  border: var(--hairline-w) solid var(--hairline-strong);
+  background: var(--bg-raised);
+  box-shadow: 0 10px 24px oklch(0% 0 0 / 0.12);
+}
+
+.sidebar-sort-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 6px;
+  border-radius: var(--radius-hit);
+  color: var(--fg-muted);
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sidebar-sort-menu button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.sidebar-sort-menu button[aria-checked="true"] {
+  color: var(--fg);
+}
+
+.sidebar-sort-menu button[aria-checked="true"]::after {
+  content: "";
+  width: 4px;
+  height: 4px;
+  margin-left: 10px;
+  background: currentColor;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sidebar-panel,
   .sidebar-panel-content {
     transition-duration: 60ms;
   }
+}
+
+.sidebar-tree-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 .sidebar-tree {
@@ -478,6 +571,31 @@ input {
   --trees-selected-bg-override: var(--active);
   --trees-selected-fg-override: var(--fg);
   --trees-selected-focused-border-color-override: var(--accent);
+}
+
+.sidebar-tree-menu {
+  min-width: 104px;
+  padding: 4px;
+  border: var(--hairline-w) solid var(--hairline-strong);
+  background: var(--bg-raised);
+  box-shadow: 0 10px 24px oklch(0% 0 0 / 0.12);
+}
+
+.sidebar-tree-menu button {
+  display: block;
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: var(--radius-hit);
+  color: var(--fg-muted);
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.sidebar-tree-menu button:hover {
+  background: var(--hover);
+  color: var(--fg);
 }
 
 @keyframes palette-fade {

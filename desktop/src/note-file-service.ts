@@ -244,7 +244,7 @@ export class NoteFileService {
 
   private async scanNotes() {
     const metas: NoteMeta[] = [];
-    await this.walkDirectory(this.notesRoot, metas, false);
+    await this.walkDirectory(this.notesRoot, metas, true);
     return metas.sort((left, right) => left.path.localeCompare(right.path));
   }
 
@@ -426,8 +426,8 @@ export class NoteFileService {
       const previous = this.notes.get(sourcePath);
       this.notes.delete(sourcePath);
       const next = previous
-        ? createNoteMeta(destinationPath, previous.mtimeMs, previous.size)
-        : createNoteMeta(destinationPath, Date.now(), 0);
+        ? createNoteMeta(destinationPath, previous.birthtimeMs, previous.mtimeMs, previous.size)
+        : createNoteMeta(destinationPath, Date.now(), Date.now(), 0);
       this.notes.set(destinationPath, next);
       this.emitTreePatch({ added: [next], removed: [sourcePath], updated: [] });
       return;
@@ -444,7 +444,7 @@ export class NoteFileService {
 
     for (const [notePath, meta] of movedEntries) {
       const nextPath = `${destinationPath}/${notePath.slice(sourcePrefix.length)}`;
-      const next = createNoteMeta(nextPath, meta.mtimeMs, meta.size);
+      const next = createNoteMeta(nextPath, meta.birthtimeMs, meta.mtimeMs, meta.size);
       this.notes.delete(notePath);
       this.notes.set(nextPath, next);
       removed.push(notePath);
@@ -462,7 +462,7 @@ export class NoteFileService {
       const notePath = this.normalizeAbsoluteNotePath(filePath);
       if (!notePath) return null;
 
-      return createNoteMeta(notePath, fileStat.mtimeMs, fileStat.size);
+      return createNoteMeta(notePath, fileStat.birthtimeMs, fileStat.mtimeMs, fileStat.size);
     } catch {
       return null;
     }
@@ -472,7 +472,7 @@ export class NoteFileService {
     const notePath = this.normalizeAbsoluteNotePath(filePath);
     if (!notePath) return null;
 
-    return createNoteMeta(notePath, 0, 0);
+    return createNoteMeta(notePath, 0, 0, 0);
   }
 
   private shouldIgnoreAbsolutePath(filePath: string) {
@@ -512,11 +512,17 @@ export class NoteFileService {
   }
 }
 
-function createNoteMeta(notePath: string, mtimeMs: number, size: number): NoteMeta {
+function createNoteMeta(
+  notePath: string,
+  birthtimeMs: number,
+  mtimeMs: number,
+  size: number,
+): NoteMeta {
   const segments = notePath.split("/");
   const fileName = segments.at(-1) ?? notePath;
 
   return {
+    birthtimeMs,
     directory: segments.slice(0, -1).join("/"),
     fileName,
     mtimeMs,

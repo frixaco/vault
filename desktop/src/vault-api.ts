@@ -1,5 +1,5 @@
 import type { AttachmentsMigrationResult } from "./media-types.js";
-import type { NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
+import type { NoteMeta, NotesTreePatchEvent, OpenNoteUpdatedEvent } from "./note-events.js";
 import type {
   NoteContentSearchResponse,
   NoteSearchResponse,
@@ -15,6 +15,7 @@ export type VaultApi = {
   closeWindow: () => Promise<void>;
   createNote: (payload: { content: string }) => Promise<{ content: string; path: string }>;
   inspectVaultDirectory: (path: string) => Promise<VaultDirectorySummary>;
+  listNoteMeta: () => Promise<NoteMeta[]>;
   listNotes: () => Promise<string[]>;
   migrateAttachments: () => Promise<AttachmentsMigrationResult>;
   moveNote: (payload: {

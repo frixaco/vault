@@ -7,12 +7,14 @@ import { CommandPalette } from "./command-palette.js";
 import { VaultEmbed, VaultLink } from "./editor-embed.js";
 import { setCurrentMarkdownNotePath, VaultImage, VaultMedia } from "./editor-media.js";
 import { FileTreeFeature } from "./file-tree-feature.js";
+import type { SidebarSortMode } from "./file-tree-feature.js";
+import { IconSort } from "./icon-sort.js";
 import { vaultApi } from "./renderer-api.js";
 import { SettingsPanel } from "./settings-panel.js";
 import { TabBar } from "./tab-bar.js";
 import { createDraftTab, createInitialTabState, createNoteTab, ensureOpenTab } from "./tabs.js";
 import type { EditorTab } from "./tabs.js";
-import type { NotesTreePatchEvent } from "./note-events.js";
+import type { NoteMeta, NotesTreePatchEvent } from "./note-events.js";
 import type { NoteSearchResult, SearchJump } from "./search-types.js";
 import { VaultSelectionScreen } from "./vault-selection-screen.js";
 import type { OpenVaultResult } from "./vault-session.js";
@@ -59,6 +61,29 @@ type PendingSearchJump = {
   notePath: string;
 };
 
+const sidebarSortOptions: Array<{ label: string; mode: SidebarSortMode }> = [
+  { label: "Alphabetical A-Z", mode: { direction: "asc", key: "alphabetical" } },
+  { label: "Alphabetical Z-A", mode: { direction: "desc", key: "alphabetical" } },
+  { label: "Modified newest", mode: { direction: "desc", key: "modified" } },
+  { label: "Modified oldest", mode: { direction: "asc", key: "modified" } },
+  { label: "Created newest", mode: { direction: "desc", key: "created" } },
+  { label: "Created oldest", mode: { direction: "asc", key: "created" } },
+];
+
+const defaultSidebarSortMode: SidebarSortMode = { direction: "asc", key: "alphabetical" };
+
+function getSidebarSortModeId(mode: SidebarSortMode) {
+  return `${mode.key}:${mode.direction}`;
+}
+
+function getSidebarSortLabel(mode: SidebarSortMode) {
+  return (
+    sidebarSortOptions.find(
+      (option) => getSidebarSortModeId(option.mode) === getSidebarSortModeId(mode),
+    )?.label ?? "Sort"
+  );
+}
+
 function remapNotePath(
   notePath: string,
   sourcePath: string,
@@ -100,9 +125,144 @@ function applyNotesTreePatch(currentNotes: string[], patch: NotesTreePatchEvent)
   return [...nextNotes].sort((left, right) => left.localeCompare(right));
 }
 
+function createNoteMetaRecord(notes: NoteMeta[]) {
+  return Object.fromEntries(notes.map((note) => [note.path, note]));
+}
+
+function applyNoteMetaPatch(
+  currentNoteMetaByPath: Readonly<Record<string, NoteMeta>>,
+  patch: NotesTreePatchEvent,
+) {
+  const nextNoteMetaByPath = { ...currentNoteMetaByPath };
+
+  for (const notePath of patch.removed) {
+    delete nextNoteMetaByPath[notePath];
+  }
+  for (const note of patch.added) {
+    nextNoteMetaByPath[note.path] = note;
+  }
+  for (const note of patch.updated) {
+    nextNoteMetaByPath[note.path] = note;
+  }
+
+  return nextNoteMetaByPath;
+}
+
+function remapNoteMetaByPath(
+  currentNoteMetaByPath: Readonly<Record<string, NoteMeta>>,
+  sourcePath: string,
+  destinationPath: string,
+  isFolder: boolean,
+) {
+  const nextNoteMetaByPath: Record<string, NoteMeta> = {};
+
+  for (const [notePath, noteMeta] of Object.entries(currentNoteMetaByPath)) {
+    const nextPath = remapNotePath(notePath, sourcePath, destinationPath, isFolder);
+    nextNoteMetaByPath[nextPath] =
+      nextPath === notePath
+        ? noteMeta
+        : { ...noteMeta, ...getNotePathParts(nextPath), path: nextPath };
+  }
+
+  return nextNoteMetaByPath;
+}
+
+function createPlaceholderNoteMeta(notePath: string): NoteMeta {
+  const timestamp = Date.now();
+  return {
+    ...getNotePathParts(notePath),
+    birthtimeMs: timestamp,
+    mtimeMs: timestamp,
+    path: notePath,
+    size: 0,
+  };
+}
+
+function getNotePathParts(notePath: string) {
+  const segments = notePath.split("/");
+  const fileName = segments.at(-1) ?? notePath;
+
+  return {
+    directory: segments.slice(0, -1).join("/"),
+    fileName,
+    title: fileName,
+  };
+}
+
+function SidebarSortControl({
+  onChange,
+  value,
+}: {
+  onChange: (mode: SidebarSortMode) => void;
+  value: SidebarSortMode;
+}) {
+  const [open, setOpen] = useState(false);
+  const controlRef = useRef<HTMLDivElement | null>(null);
+  const currentSortId = getSidebarSortModeId(value);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && controlRef.current?.contains(event.target)) return;
+      setOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [open]);
+
+  return (
+    <div className="sidebar-sort-control" ref={controlRef}>
+      <button
+        type="button"
+        className="sidebar-icon-button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={`Sort: ${getSidebarSortLabel(value)}`}
+        title={`Sort: ${getSidebarSortLabel(value)}`}
+        onClick={() => setOpen((currentOpen) => !currentOpen)}
+      >
+        <IconSort />
+      </button>
+      {open ? (
+        <div className="sidebar-sort-menu" role="menu">
+          {sidebarSortOptions.map((option) => {
+            const optionId = getSidebarSortModeId(option.mode);
+            return (
+              <button
+                key={optionId}
+                type="button"
+                role="menuitemradio"
+                aria-checked={optionId === currentSortId}
+                onClick={() => {
+                  onChange(option.mode);
+                  setOpen(false);
+                }}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function App() {
   const [mode, setMode] = useState<"select-vault" | "editor">("select-vault");
   const [notes, setNotes] = useState<string[]>([]);
+  const [noteMetaByPath, setNoteMetaByPath] = useState<Record<string, NoteMeta>>({});
+  const [sidebarSortMode, setSidebarSortMode] = useState<SidebarSortMode>(defaultSidebarSortMode);
   const [, setStatus] = useState("Loading…");
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -127,6 +287,7 @@ function App() {
     [tabState.tabs],
   );
   const openNotePathsKey = openNotePaths.join("\n");
+  const activeNotePath = activeTab?.kind === "note" ? activeTab.path : null;
 
   useEffect(() => {
     tabStateRef.current = tabState;
@@ -143,6 +304,7 @@ function App() {
 
   const handleVaultOpened = useCallback((result: OpenVaultResult) => {
     setNotes(result.notes);
+    setNoteMetaByPath({});
     setStatus(`${result.notes.length} notes`);
     setError(null);
     setSidebarOpen(true);
@@ -276,9 +438,10 @@ function App() {
   const refreshNotes = useCallback(async () => {
     if (mode !== "editor") return;
 
-    const files = await vaultApi.listNotes();
-    setNotes(files);
-    setStatus(`${files.length} notes`);
+    const noteMetas = await vaultApi.listNoteMeta();
+    setNoteMetaByPath(createNoteMetaRecord(noteMetas));
+    setNotes(noteMetas.map((note) => note.path));
+    setStatus(`${noteMetas.length} notes`);
   }, [mode]);
 
   const updateOpenNotePaths = useCallback(
@@ -326,6 +489,14 @@ function App() {
       setNotes((currentNotes) =>
         remapNotePaths(currentNotes, normalizedSource, normalizedDestination, isFolder),
       );
+      setNoteMetaByPath((currentNoteMetaByPath) =>
+        remapNoteMetaByPath(
+          currentNoteMetaByPath,
+          normalizedSource,
+          normalizedDestination,
+          isFolder,
+        ),
+      );
       updateOpenNotePaths(normalizedSource, normalizedDestination, isFolder);
 
       try {
@@ -337,6 +508,14 @@ function App() {
         await refreshNotes();
       } catch (moveError: unknown) {
         setError(moveError instanceof Error ? moveError.message : String(moveError));
+        setNoteMetaByPath((currentNoteMetaByPath) =>
+          remapNoteMetaByPath(
+            currentNoteMetaByPath,
+            normalizedDestination,
+            normalizedSource,
+            isFolder,
+          ),
+        );
         updateOpenNotePaths(normalizedDestination, normalizedSource, isFolder);
         await refreshNotes();
       }
@@ -451,6 +630,12 @@ function App() {
             .createNote({ content: latestTab.content })
             .then((createdNote) => {
               lastSavedContentRef.current.set(createdNote.path, createdNote.content);
+              setNoteMetaByPath((currentNoteMetaByPath) => ({
+                ...currentNoteMetaByPath,
+                [createdNote.path]:
+                  currentNoteMetaByPath[createdNote.path] ??
+                  createPlaceholderNoteMeta(createdNote.path),
+              }));
               setNotes((currentNotes) =>
                 currentNotes.includes(createdNote.path)
                   ? currentNotes
@@ -486,6 +671,9 @@ function App() {
           .then((savedNote) => {
             lastSavedContentRef.current.delete(latestTab.path);
             lastSavedContentRef.current.set(savedNote.path, savedNote.content);
+            setNoteMetaByPath((currentNoteMetaByPath) =>
+              remapNoteMetaByPath(currentNoteMetaByPath, latestTab.path, savedNote.path, false),
+            );
             setNotes((currentNotes) => {
               const nextNotes = remapNotePaths(currentNotes, latestTab.path, savedNote.path, false);
               return nextNotes.includes(savedNote.path)
@@ -601,6 +789,9 @@ function App() {
     }
 
     const unsubscribeTreePatch = vaultApi.onNotesTreePatch((patch) => {
+      setNoteMetaByPath((currentNoteMetaByPath) =>
+        applyNoteMetaPatch(currentNoteMetaByPath, patch),
+      );
       setNotes((currentNotes) => {
         const nextNotes = applyNotesTreePatch(currentNotes, patch);
         setStatus(`${nextNotes.length} notes`);
@@ -688,6 +879,10 @@ function App() {
             className="sidebar-panel-content flex min-w-0 flex-1 flex-col pt-2 pb-2"
             aria-label="Note list"
           >
+            <header className="sidebar-header">
+              <div className="sidebar-title">Notes</div>
+              <SidebarSortControl value={sidebarSortMode} onChange={setSidebarSortMode} />
+            </header>
             {error ? (
               <div className="px-2 pb-2">
                 <div className="border border-hairline-strong bg-accent/10 px-2.5 py-2 font-vault-chrome text-[11px] text-accent">
@@ -696,12 +891,16 @@ function App() {
               </div>
             ) : null}
             <FileTreeFeature
+              activeNotePath={activeNotePath}
+              isSidebarOpen={sidebarOpen}
+              noteMetaByPath={noteMetaByPath}
               notes={notes}
               onError={setError}
               onMove={(sourcePath, destinationPath, isFolder) => {
                 void persistNoteMove(sourcePath, destinationPath, isFolder);
               }}
               onOpenNote={(notePath) => openMarkdownNoteRef.current(notePath)}
+              sortMode={sidebarSortMode}
             />
           </section>
         </aside>

@@ -109,6 +109,10 @@ export class VaultSession {
     return this.requireActiveVault().noteFiles.listNotePaths();
   }
 
+  listNoteMeta() {
+    return this.requireActiveVault().noteFiles.listNoteMeta();
+  }
+
   createNote(content: string) {
     return this.requireActiveVault().noteFiles.createNote(content);
   }

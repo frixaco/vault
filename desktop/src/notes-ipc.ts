@@ -11,6 +11,7 @@ import type {
 type NoteFileProvider = Pick<
   NoteFileService,
   | "createNote"
+  | "listNoteMeta"
   | "listNotePaths"
   | "moveNote"
   | "readNote"
@@ -42,6 +43,7 @@ export function registerNoteIpcHandlers({
   titleSearch,
 }: NoteIpcHandlersOptions) {
   ipcMain.handle("notes:list", () => noteFiles.listNotePaths());
+  ipcMain.handle("notes:list-meta", () => noteFiles.listNoteMeta());
   ipcMain.handle("notes:create", (_, payload: { content: string }) =>
     noteFiles.createNote(payload.content),
   );

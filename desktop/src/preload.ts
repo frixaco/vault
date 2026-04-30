@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld("vault", {
     return () => ipcRenderer.removeListener("notes:watch-error", listener);
   },
   listNotes: () => ipcRenderer.invoke("notes:list") as Promise<string[]>,
+  listNoteMeta: () => ipcRenderer.invoke("notes:list-meta") as ReturnType<VaultApi["listNoteMeta"]>,
   moveNote: (payload: { destinationPath: string; isFolder: boolean; sourcePath: string }) =>
     ipcRenderer.invoke("notes:move", payload) as Promise<void>,
   openNote: (path: string) => ipcRenderer.invoke("notes:open", path) as Promise<string>,

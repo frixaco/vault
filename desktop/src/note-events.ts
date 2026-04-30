@@ -1,4 +1,5 @@
 export type NoteMeta = {
+  birthtimeMs: number;
   directory: string;
   fileName: string;
   mtimeMs: number;
