@@ -20,6 +20,9 @@ importers:
       oxlint:
         specifier: 1.61.0
         version: 1.61.0
+      oxlint-tailwindcss:
+        specifier: 0.6.3
+        version: 0.6.3(@oxlint/plugins@1.62.0)
       tsx:
         specifier: 4.21.0
         version: 4.21.0
@@ -1453,6 +1456,10 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [win32]
+
+  '@oxlint/plugins@1.62.0':
+    resolution: {integrity: sha512-BgKRw631mImmxuGuRoWaRT8AvNSJCfJvR7lDzP1jR3sBAa7q8P/Ii+lcEOEFZsfcfpkXLyUKGEQLYXWqb60wvw==}
+    engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
   '@parcel/watcher-android-arm64@2.5.6':
     resolution: {integrity: sha512-YQxSS34tPF/6ZG7r/Ih9xy+kP/WwediEUsqmtf0cuCV5TPPKw/PQHRhueUo6JdeFJaqV3pyjm0GdYjZotbRt/A==}
@@ -4169,6 +4176,12 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
+  oxlint-tailwindcss@0.6.3:
+    resolution: {integrity: sha512-FuM8Hf6e59/FWi4aobymWWGgwuvCDpCU2/uWlnfU5FwTe3cKw5RLu8t2Q9K7wbbmgkjyfS4V5TmdVQX3O1s0kw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@oxlint/plugins': '>=1.43.0'
+
   oxlint@1.61.0:
     resolution: {integrity: sha512-ZC0ALuhDZ6ivOFG+sy0D0pEDN49EvsId98zVlmYdkcXHsEM14m/qTNUEsUpiFiCVbpIxYtVBmmLE87nsbUHohQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -6656,6 +6669,8 @@ snapshots:
 
   '@oxlint/binding-win32-x64-msvc@1.61.0':
     optional: true
+
+  '@oxlint/plugins@1.62.0': {}
 
   '@parcel/watcher-android-arm64@2.5.6':
     optional: true
@@ -9629,6 +9644,12 @@ snapshots:
       '@oxfmt/binding-win32-arm64-msvc': 0.46.0
       '@oxfmt/binding-win32-ia32-msvc': 0.46.0
       '@oxfmt/binding-win32-x64-msvc': 0.46.0
+
+  oxlint-tailwindcss@0.6.3(@oxlint/plugins@1.62.0):
+    dependencies:
+      '@oxlint/plugins': 1.62.0
+      '@tailwindcss/node': 4.2.4
+      tailwindcss: 4.2.4
 
   oxlint@1.61.0:
     optionalDependencies:

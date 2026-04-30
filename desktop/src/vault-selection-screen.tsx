@@ -42,13 +42,13 @@ export function VaultSelectionScreen({ onOpenVault }: VaultSelectionScreenProps)
   return (
     <main className="relative grid h-full justify-items-center bg-bg px-6 py-10 font-vault-chrome text-fg">
       <div
-        className="fixed inset-x-0 top-0 h-10 z-10 [app-region:drag] [-webkit-app-region:drag]"
+        className="fixed inset-x-0 top-0 z-10 h-10 [-webkit-app-region:drag] [app-region:drag]"
         aria-hidden="true"
       />
 
       <section className="flex w-full max-w-2xl flex-col justify-center gap-8">
         <header className="pb-2">
-          <div className="text-xs font-bold uppercase text-fg">Vault</div>
+          <div className="text-xs font-bold text-fg uppercase">Vault</div>
         </header>
 
         <div className="border-y border-hairline-strong">
@@ -63,7 +63,7 @@ export function VaultSelectionScreen({ onOpenVault }: VaultSelectionScreenProps)
 
           {summary ? (
             <div className="pt-4 pb-6">
-              <div className="break-all text-sm leading-normal text-fg">{summary.path}</div>
+              <div className="text-sm leading-normal break-all text-fg">{summary.path}</div>
               <div className="pt-7">
                 <div className="grid grid-cols-3 text-xs">
                   <VaultStat label="Files" value={summary.fileCount} />
@@ -105,7 +105,7 @@ export function VaultSelectionScreen({ onOpenVault }: VaultSelectionScreenProps)
 function VaultStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="border-r border-hairline px-6 py-3 first:pl-0 last:border-r-0">
-      <div className="text-xs uppercase text-fg-faint">{label}</div>
+      <div className="text-xs text-fg-faint uppercase">{label}</div>
       <div className="pt-1 text-2xl text-fg">{value}</div>
     </div>
   );

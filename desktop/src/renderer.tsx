@@ -672,7 +672,7 @@ function App() {
   return (
     <main className="relative h-full overflow-hidden bg-bg">
       <div
-        className="fixed inset-x-0 top-0 h-10 z-10 [app-region:drag] [-webkit-app-region:drag]"
+        className="fixed inset-x-0 top-0 z-10 h-10 [-webkit-app-region:drag] [app-region:drag]"
         aria-hidden="true"
       />
 
@@ -684,7 +684,7 @@ function App() {
       </section>
 
       <aside
-        className="sidebar-panel fixed inset-y-0 left-0 z-20 pt-4 flex w-sidebar border-r border-hairline-strong bg-bg-raised"
+        className="sidebar-panel fixed inset-y-0 left-0 z-20 flex w-sidebar border-r border-hairline-strong bg-bg-raised pt-4"
         data-open={sidebarOpen}
         aria-label="Notes"
         aria-hidden={!sidebarOpen}

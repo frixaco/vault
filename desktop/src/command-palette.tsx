@@ -98,7 +98,7 @@ export function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-50 grid items-start justify-items-center bg-transparent px-6 pt-24 animate-palette-fade"
+      className="fixed inset-0 z-50 grid animate-palette-fade items-start justify-items-center bg-transparent px-6 pt-24"
       role="dialog"
       aria-modal="true"
       onMouseDown={onClose}
@@ -190,7 +190,7 @@ export function CommandPalette({
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <div className="pb-1 font-vault-chrome text-[10px] uppercase text-fg-faint">{children}</div>
+    <div className="pb-1 font-vault-chrome text-[10px] text-fg-faint uppercase">{children}</div>
   );
 }
 
@@ -207,7 +207,7 @@ function TitleResultButton({
 }) {
   return (
     <button
-      className="group flex w-full min-w-0 flex-col gap-1 rounded-xs bg-transparent px-3 py-2 font-vault-chrome text-left text-[12px] text-fg-muted transition-colors duration-100 ease-vault hover:bg-active hover:text-fg aria-selected:bg-active aria-selected:text-fg"
+      className="group flex w-full min-w-0 flex-col gap-1 rounded-xs bg-transparent px-3 py-2 text-left font-vault-chrome text-[12px] text-fg-muted transition-colors duration-100 ease-vault hover:bg-active hover:text-fg aria-selected:bg-active aria-selected:text-fg"
       role="option"
       aria-selected={selected}
       type="button"
@@ -237,7 +237,7 @@ function ContentResultButton({
 
   return (
     <button
-      className="group flex h-9 w-full min-w-0 items-center gap-3 rounded-xs bg-transparent px-3 font-vault-chrome text-left text-[12px] text-fg-muted transition-colors duration-100 ease-vault hover:bg-active hover:text-fg aria-selected:bg-active aria-selected:text-fg"
+      className="group flex h-9 w-full min-w-0 items-center gap-3 rounded-xs bg-transparent px-3 text-left font-vault-chrome text-[12px] text-fg-muted transition-colors duration-100 ease-vault hover:bg-active hover:text-fg aria-selected:bg-active aria-selected:text-fg"
       role="option"
       aria-selected={selected}
       type="button"
@@ -247,7 +247,7 @@ function ContentResultButton({
       <span className="shrink-0 overflow-hidden text-ellipsis whitespace-nowrap text-fg">
         {result.title}
       </span>
-      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] text-fg-faint group-aria-selected:text-fg-muted">
+      <span className="min-w-0 flex-1 overflow-hidden text-[11px] text-ellipsis whitespace-nowrap text-fg-faint group-aria-selected:text-fg-muted">
         {result.snippet.slice(0, start)}
         <span className="bg-accent/15 text-fg">{result.snippet.slice(start, end)}</span>
         {result.snippet.slice(end)}

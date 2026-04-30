@@ -44,7 +44,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 grid items-start justify-items-center bg-fg/20 px-6 pt-20 animate-palette-fade"
+      className="fixed inset-0 z-50 grid animate-palette-fade items-start justify-items-center bg-fg/20 px-6 pt-20"
       role="dialog"
       aria-modal="true"
       onMouseDown={onClose}
@@ -68,7 +68,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         <div className="py-1">
           <button
             type="button"
-            className="flex min-h-8.5 w-full items-center justify-between bg-transparent px-3.5 font-vault-chrome text-left text-[12px] text-fg-muted hover:bg-active hover:text-fg disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
+            className="flex min-h-8.5 w-full items-center justify-between bg-transparent px-3.5 text-left font-vault-chrome text-[12px] text-fg-muted hover:bg-active hover:text-fg disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
             disabled={migrationRunning}
             onClick={handleMigrateAttachments}
           >

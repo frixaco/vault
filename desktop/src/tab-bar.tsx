@@ -20,7 +20,7 @@ export function TabBar({
 }) {
   return (
     <nav
-      className="editor-width fixed bottom-0 left-1/2 z-10 flex h-tabbar -translate-x-1/2 items-center justify-center overflow-x-auto bg-transparent pointer-events-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="editor-width pointer-events-none fixed bottom-0 left-1/2 z-10 flex h-tabbar -translate-x-1/2 items-center justify-center overflow-x-auto bg-transparent [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       aria-label="Open notes"
     >
       {tabs.map((tab, index) => (
@@ -40,7 +40,7 @@ export function TabBar({
           onContextMenu={(event) => onTabContextMenu(event, tab.id)}
           onMouseDown={(event) => onTabMouseDown(event, tab.id)}
         >
-          <span className="flex min-w-0 flex-1 items-center justify-center gap-1 pl-2 pr-5">
+          <span className="flex min-w-0 flex-1 items-center justify-center gap-1 pr-5 pl-2">
             <span
               className="inline-grid size-4 flex-none place-items-center overflow-hidden text-current opacity-0 transition-opacity duration-100 ease-vault group-hover:opacity-100 [&_.icon]:h-3 [&_.icon]:w-3"
               role="button"
