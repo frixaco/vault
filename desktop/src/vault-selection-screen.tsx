@@ -40,21 +40,21 @@ export function VaultSelectionScreen({ onOpenVault }: VaultSelectionScreenProps)
   }
 
   return (
-    <main className="relative grid h-full bg-bg px-5 py-10 font-vault-chrome text-fg">
+    <main className="relative grid h-full justify-items-center bg-bg px-6 py-10 font-vault-chrome text-fg">
       <div
         className="fixed inset-x-0 top-0 h-10 z-10 [app-region:drag] [-webkit-app-region:drag]"
         aria-hidden="true"
       />
 
-      <section className="mx-auto flex w-full max-w-160 flex-col justify-center gap-8">
-        <header className="space-y-2">
-          <p className="m-0 font-bold text-[11px] uppercase text-fg">Vault</p>
+      <section className="flex w-full max-w-2xl flex-col justify-center gap-8">
+        <header className="pb-2">
+          <div className="text-xs font-bold uppercase text-fg">Vault</div>
         </header>
 
         <div className="border-y border-hairline-strong">
           <button
             type="button"
-            className="flex min-h-11 w-full items-center bg-transparent px-0 text-left text-[12px] text-fg-muted hover:text-fg disabled:cursor-default disabled:opacity-60"
+            className="flex min-h-12 w-full items-center bg-transparent px-0 text-left text-sm text-fg-muted hover:text-fg disabled:cursor-default disabled:opacity-60"
             disabled={choosing || opening}
             onClick={chooseVaultDirectory}
           >
@@ -62,33 +62,35 @@ export function VaultSelectionScreen({ onOpenVault }: VaultSelectionScreenProps)
           </button>
 
           {summary ? (
-            <div className="border-t border-hairline py-4">
-              <p className="m-0 break-all text-[12px] leading-normal text-fg">{summary.path}</p>
-              <dl className="mt-4 grid grid-cols-3 border-y border-hairline text-[11px]">
-                <VaultStat label="Files" value={summary.fileCount} />
-                <VaultStat label="Notes" value={summary.noteCount} />
-                <VaultStat label="Media" value={summary.mediaCount} />
-              </dl>
+            <div className="pt-4 pb-6">
+              <div className="break-all text-sm leading-normal text-fg">{summary.path}</div>
+              <div className="pt-7">
+                <div className="grid grid-cols-3 text-xs">
+                  <VaultStat label="Files" value={summary.fileCount} />
+                  <VaultStat label="Notes" value={summary.noteCount} />
+                  <VaultStat label="Media" value={summary.mediaCount} />
+                </div>
+              </div>
               {summary.unreadableCount > 0 ? (
-                <p className="m-0 pt-3 text-[11px] leading-normal text-accent">
+                <div className="pt-3 text-xs leading-normal text-accent">
                   {summary.unreadableCount} unreadable{" "}
                   {summary.unreadableCount === 1 ? "folder" : "folders"} skipped.
-                </p>
+                </div>
               ) : null}
             </div>
           ) : null}
         </div>
 
         {error ? (
-          <p className="m-0 border border-hairline-strong bg-accent/10 px-3 py-2 text-[11px] leading-normal text-accent">
+          <div className="border border-hairline-strong bg-accent/10 px-3 py-2 text-xs leading-normal text-accent">
             {error}
-          </p>
+          </div>
         ) : null}
 
         <footer className="flex justify-end">
           <button
             type="button"
-            className="h-8 min-w-24 bg-fg px-3 text-[12px] text-bg disabled:cursor-default disabled:opacity-35"
+            className="h-8 min-w-24 bg-fg px-3 text-sm text-bg disabled:cursor-default disabled:opacity-35"
             disabled={!summary || choosing || opening}
             onClick={openVault}
           >
@@ -102,9 +104,9 @@ export function VaultSelectionScreen({ onOpenVault }: VaultSelectionScreenProps)
 
 function VaultStat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="border-r border-hairline py-3 last:border-r-0">
-      <dt className="text-[10px] uppercase text-fg-faint">{label}</dt>
-      <dd className="m-0 pt-1 text-[16px] text-fg">{value}</dd>
+    <div className="border-r border-hairline px-6 py-3 first:pl-0 last:border-r-0">
+      <div className="text-xs uppercase text-fg-faint">{label}</div>
+      <div className="pt-1 text-2xl text-fg">{value}</div>
     </div>
   );
 }

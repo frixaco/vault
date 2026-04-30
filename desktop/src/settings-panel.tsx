@@ -55,7 +55,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="flex h-11 items-center justify-between border-b border-hairline px-3.5">
-          <h1 className="m-0 font-vault-chrome text-[13px] font-medium text-fg">Settings</h1>
+          <div className="font-vault-chrome text-[13px] font-medium text-fg">Settings</div>
           <button
             type="button"
             className="grid h-6 w-6 place-items-center bg-transparent text-fg-muted hover:text-fg"
@@ -77,14 +77,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         {migrationResult ? (
-          <p className="m-0 border-t border-hairline px-3.5 pt-2.5 pb-3 font-vault-chrome text-[11px] leading-normal text-fg-muted">
+          <div className="border-t border-hairline px-3.5 pt-2.5 pb-3 font-vault-chrome text-[11px] leading-normal text-fg-muted">
             {formatMigrationResult(migrationResult)}
-          </p>
+          </div>
         ) : null}
         {migrationError ? (
-          <p className="m-0 border-t border-hairline px-3.5 pt-2.5 pb-3 font-vault-chrome text-[11px] leading-normal text-accent">
+          <div className="border-t border-hairline px-3.5 pt-2.5 pb-3 font-vault-chrome text-[11px] leading-normal text-accent">
             {migrationError}
-          </p>
+          </div>
         ) : null}
       </section>
     </div>

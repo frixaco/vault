@@ -104,35 +104,37 @@ export function CommandPalette({
       onMouseDown={onClose}
     >
       <div
-        className="w-full max-w-130 border border-hairline-strong bg-bg-raised p-2 shadow-[0_18px_60px_oklch(0%_0_0/0.14)]"
+        className="flex w-full max-w-130 flex-col border border-hairline-strong bg-bg-raised p-2 shadow-[0_18px_60px_oklch(0%_0_0/0.14)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <input
-          className="mb-2 h-10 w-full border border-hairline bg-transparent px-3 font-vault-chrome text-[13px] text-fg outline-none placeholder:text-fg-faint"
-          placeholder="Find file…"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setSelectedIndex((index) => (results.length ? (index + 1) % results.length : 0));
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setSelectedIndex((index) =>
-                results.length ? (index - 1 + results.length) % results.length : 0,
-              );
-            } else if (event.key === "Enter" && selectedResult) {
-              event.preventDefault();
-              openResult(selectedResult);
-            }
-          }}
-          autoFocus
-          aria-label="Find file"
-          aria-controls="command-palette-results"
-          aria-expanded="true"
-        />
+        <div className="pb-2">
+          <input
+            className="h-10 w-full border border-hairline bg-transparent px-3 font-vault-chrome text-[13px] text-fg outline-none placeholder:text-fg-faint"
+            placeholder="Find file…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setSelectedIndex((index) => (results.length ? (index + 1) % results.length : 0));
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setSelectedIndex((index) =>
+                  results.length ? (index - 1 + results.length) % results.length : 0,
+                );
+              } else if (event.key === "Enter" && selectedResult) {
+                event.preventDefault();
+                openResult(selectedResult);
+              }
+            }}
+            autoFocus
+            aria-label="Find file"
+            aria-controls="command-palette-results"
+            aria-expanded="true"
+          />
+        </div>
         <div
-          className="max-h-96 space-y-4 overflow-y-auto"
+          className="flex max-h-96 flex-col overflow-y-auto"
           id="command-palette-results"
           role="listbox"
         >
@@ -144,7 +146,7 @@ export function CommandPalette({
             <>
               <section>
                 <SectionLabel>Notes</SectionLabel>
-                <div className="space-y-0.5">
+                <div className="flex flex-col gap-0.5">
                   {titleResults.map((result, index) => (
                     <TitleResultButton
                       key={result.id}
@@ -156,9 +158,9 @@ export function CommandPalette({
                   ))}
                 </div>
               </section>
-              <section>
+              <section className="pt-4">
                 <SectionLabel>Note content</SectionLabel>
-                <div className="space-y-0.5">
+                <div className="flex flex-col gap-0.5">
                   {contentResults.map((result, contentIndex) => {
                     const index = titleResults.length + contentIndex;
 

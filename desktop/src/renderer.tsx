@@ -677,10 +677,10 @@ function App() {
       />
 
       <section
-        className="fixed inset-x-0 top-10 bottom-tabbar min-w-0 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
+        className="fixed inset-x-0 top-10 bottom-tabbar flex min-w-0 justify-center overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
         ref={editorPaneRef}
       >
-        <EditorContent editor={editor} />
+        <EditorContent className="editor-width min-h-full" editor={editor} />
       </section>
 
       <aside

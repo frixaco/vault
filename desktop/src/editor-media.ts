@@ -109,14 +109,22 @@ export const VaultMedia = TiptapNode.create({
     });
 
     if (kind === "audio") {
-      return ["audio", mergeAttributes(attrs, { controls: "true" })];
+      return [
+        "span",
+        { class: "vault-media-block" },
+        ["audio", mergeAttributes(attrs, { controls: "true" })],
+      ];
     }
 
     if (kind === "video") {
-      return ["video", mergeAttributes(attrs, { controls: "true" })];
+      return [
+        "span",
+        { class: "vault-media-block" },
+        ["video", mergeAttributes(attrs, { controls: "true" })],
+      ];
     }
 
-    return ["img", mergeAttributes(attrs, { alt })];
+    return ["span", { class: "vault-media-block" }, ["img", mergeAttributes(attrs, { alt })]];
   },
 
   markdownTokenName: "vaultMedia",
@@ -238,5 +246,13 @@ export const VaultImage = Image.extend({
     const title = node.attrs?.title ?? "";
 
     return title ? `![${alt}](${src} "${title}")` : `![${alt}](${src})`;
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "span",
+      { class: "vault-media-block" },
+      ["img", mergeAttributes(this.options.HTMLAttributes, HTMLAttributes)],
+    ];
   },
 });
