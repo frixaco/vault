@@ -1,0 +1,13 @@
+[package]
+name = "native-markdown-ffi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "native_markdown_ffi"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[dependencies]
+comrak = { version = "0.52.0", default-features = false }
+thiserror = "2"
+uniffi = "0.31.1"

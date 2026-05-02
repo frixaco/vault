@@ -10,6 +10,11 @@ TODO:
 - [ ] Conflict protection for external disk/sync updates while a note has local edits
 - [ ] Add a narrow note mutation queue/coordinator for writes, moves, deletes, watcher echoes, and future sync updates
 - [ ] Split editor behind a swappable editor adapter boundary
+- [ ] Editor: preserve unchanged markdown blocks when serializing from Tiptap
+- [ ] Editor: protect YAML frontmatter from Tiptap markdown parsing/normalization
+- [ ] Editor: ignore IME composition updates until composition commits
+- [ ] Editor: clear undo history when switching documents/tabs
+- [ ] Editor: extract shared Tiptap extension registry and add round-trip markdown tests
 - [ ] Split command palette search orchestration from palette UI
 - [ ] Make attachment migration AST-aware so image syntax inside code blocks is not rewritten
 - [ ] File locking for external access by AI + explore in app AI integration

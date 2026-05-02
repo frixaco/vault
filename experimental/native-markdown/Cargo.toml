@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "native-markdown-ffi",
+    "uniffi-bindgen",
+]
+resolver = "3"
+
+[profile.release]
+lto = true
+strip = true

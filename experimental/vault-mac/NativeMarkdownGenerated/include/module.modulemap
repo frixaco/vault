@@ -1,0 +1,7 @@
+module native_markdown_ffiFFI {
+    header "native_markdown_ffiFFI.h"
+    export *
+    use "Darwin"
+    use "_Builtin_stdbool"
+    use "_Builtin_stdint"
+}
